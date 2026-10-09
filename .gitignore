@@ -1,0 +1,28 @@
+# 環境變數與機敏金鑰憑證（嚴格阻擋）
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+*credentials*.json
+*serviceAccountKey*.json
+*secret*
+
+# 作業系統與快取暫存檔案
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+*~
+
+# 專案非必要之原圖備份與大檔設計草稿文件 (加速 GitHub Pages 部署)
+圖片/原圖備份/
+*.pdf
+
+# 套件與建置暫存 (保留純靜態架構)
+node_modules/
+dist/
+.vscode/
+.idea/

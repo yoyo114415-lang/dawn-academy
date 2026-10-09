@@ -1,0 +1,3743 @@
+/**
+ * 《破曉學園》 核心遊戲引擎 (game.js) - 滿版全地圖互通 RPG 強化版
+ * 滿版沉浸視角 ｜ 數值增減2秒浮動回饋 ｜ 心靈小提醒融入 ｜ 地面引導箭頭與光暈
+ * 全校園地圖互通 ｜ 劇情防亂跳 ｜ 節點防重複觸發 ｜ 100% 純原生 JavaScript
+ */
+
+(function () {
+  'use strict';
+
+  // ==========================================================================
+  // 1. 全域狀態管理與設定
+  // ==========================================================================
+  const GameState = {
+    screen: 'cover',           // 'cover' | 'select' | 'game'
+    selectedGender: 'boy',     // 'boy' | 'girl' | 'neutral'
+    soundEnabled: true,
+
+    // 五維數值 (初始值依 dialogues.json 規格書定義)
+    stats: {
+      stress: 50,              // 壓力值 (核心)
+      peer: 30,                // 同儕關係值
+      courage: 40,             // 勇氣值
+      safety: 35,              // 安全感
+      selfEsteem: 30           // 自我肯定值
+    },
+
+    // 任務與劇情進度引擎
+    quest: {
+      step: 1,                 // 當前主線步驟 (1~9)
+      activeNodeId: 'node1',   // 當前進行中的劇本節點
+      text: '請走到發光的座位查看嘲笑紙條',
+      completedNodes: new Set()// 已完成的節點集合，絕不重複觸發！
+    },
+
+    // 場景與時間
+    currentSceneId: 'S3',
+    day: 1,
+    timeOfDay: '清晨自習',
+
+    // 玩家在地圖上的座標與物理狀態
+    player: {
+      x: 700,
+      y: 470,
+      width: 28,
+      height: 20,
+      speed: 155,
+      direction: 'left',       // 'down' | 'up' | 'left' | 'right'
+      moving: false,
+      frame: 0,
+      animTimer: 0
+    },
+
+    // 對話系統狀態
+    dialogue: {
+      active: false,
+      textQueue: [],
+      currentLine: null,
+      typewriterTimer: null,
+      displayedLength: 0,
+      isTyping: false,
+      waitingChoice: false,
+      currentNodeData: null,
+      inSubQuestion: false
+    },
+
+    // 減壓深呼吸小遊戲狀態
+    breathing: {
+      active: false,
+      cycle: 1,
+      phase: 'inhale',
+      timer: null
+    }
+  };
+
+  // 劇本資料庫快取 (優先讀取 window.GAME_DIALOGUES)
+  let DialoguesDB = window.GAME_DIALOGUES || null;
+
+  // ==========================================================================
+  // 2. Web Audio API 音效合成器 (純代碼合成，零外部依賴)
+  // ==========================================================================
+  const SoundFX = {
+    ctx: null,
+
+    init() {
+      if (!this.ctx && (window.AudioContext || window.webkitAudioContext)) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioCtx();
+      }
+    },
+
+    playTone(freq, type = 'sine', duration = 0.2, gainLevel = 0.08) {
+      if (!GameState.soundEnabled) return;
+      try {
+        this.init();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+
+        gain.gain.setValueAtTime(gainLevel, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+      } catch (e) {}
+    },
+
+    click() {
+      this.playTone(520, 'sine', 0.08, 0.07);
+    },
+
+    alert() {
+      this.playTone(659.25, 'sine', 0.12, 0.09);
+      setTimeout(() => this.playTone(880, 'sine', 0.18, 0.09), 90);
+    },
+
+    positive() {
+      this.playTone(523.25, 'sine', 0.09, 0.09);
+      setTimeout(() => this.playTone(659.25, 'sine', 0.1, 0.09), 70);
+      setTimeout(() => this.playTone(783.99, 'sine', 0.18, 0.09), 140);
+    },
+
+    stressUp() {
+      this.playTone(220, 'triangle', 0.28, 0.14);
+      setTimeout(() => this.playTone(196, 'triangle', 0.32, 0.14), 110);
+    },
+
+    breatheBell() {
+      this.playTone(174.61, 'sine', 2.2, 0.16);
+    },
+
+    // 經典西敏寺放學四音鐘聲（Do-Mi-Re-Sol, Sol-Re-Mi-Do 鐘琴泛音）
+    playCampusBell() {
+      if (!GameState.soundEnabled) return;
+      try {
+        this.init();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+
+        const notes = [
+          { f: 659.25, time: 0.0,  dur: 1.5 }, // Mi
+          { f: 523.25, time: 0.65, dur: 1.5 }, // Do
+          { f: 587.33, time: 1.3,  dur: 1.5 }, // Re
+          { f: 392.00, time: 1.95, dur: 2.2 }, // Sol (低音)
+          { f: 523.25, time: 3.2,  dur: 1.5 }, // Do
+          { f: 587.33, time: 3.85, dur: 1.5 }, // Re
+          { f: 659.25, time: 4.5,  dur: 1.5 }, // Mi
+          { f: 523.25, time: 5.15, dur: 2.5 }  // Do
+        ];
+
+        const now = this.ctx.currentTime;
+        notes.forEach(n => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(n.f, now + n.time);
+
+          gain.gain.setValueAtTime(0.0001, now + n.time);
+          gain.gain.exponentialRampToValueAtTime(0.12, now + n.time + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + n.time + n.dur);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now + n.time);
+          osc.stop(now + n.time + n.dur);
+        });
+      } catch (e) {}
+    },
+
+    _activePhoneNodes: [],
+
+    // 客廳傳統雙鈴電話聲（叮鈴鈴～叮鈴鈴～）
+    playTelephoneRing() {
+      if (!GameState.soundEnabled) return;
+      this.stopTelephoneRing();
+      try {
+        this.init();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+
+        const bursts = [0, 2.0];
+        const now = this.ctx.currentTime;
+
+        bursts.forEach(offset => {
+          [440, 480].forEach(freq => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + offset);
+
+            gain.gain.setValueAtTime(0.0001, now + offset);
+            for (let t = 0; t < 1.3; t += 0.05) {
+              gain.gain.setValueAtTime(0.08, now + offset + t);
+              gain.gain.setValueAtTime(0.008, now + offset + t + 0.025);
+            }
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 1.4);
+
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            osc.start(now + offset);
+            osc.stop(now + offset + 1.4);
+
+            this._activePhoneNodes.push({ osc, gain });
+          });
+        });
+      } catch (e) {}
+    },
+
+    // 立即停止電話鈴聲（接起電話即刻靜音）
+    stopTelephoneRing() {
+      if (this._activePhoneNodes && this._activePhoneNodes.length) {
+        const now = (this.ctx && this.ctx.currentTime) ? this.ctx.currentTime : 0;
+        this._activePhoneNodes.forEach(node => {
+          try {
+            if (node.gain && node.gain.gain) {
+              node.gain.gain.cancelScheduledValues(now);
+              node.gain.gain.setValueAtTime(0, now);
+            }
+            if (node.osc) {
+              node.osc.stop(now);
+              node.osc.disconnect();
+            }
+          } catch (e) {}
+        });
+        this._activePhoneNodes = [];
+      }
+    }
+  };
+
+  // ==========================================================================
+  // 3. 場景圖資與立繪快取載入器
+  // ==========================================================================
+  const AssetLoader = {
+    scenes: {},
+    portraits: {},
+
+    // 邏輯場景規格 (寬x高)
+    sceneSpecs: {
+      'S1': { w: 1280, h: 960, name: '校園主地圖' },
+      'S2': { w: 768,  h: 512, name: '校門口' },
+      'S3': { w: 800,  h: 576, name: '班級教室' },
+      'S4': { w: 1280, h: 576, name: '走廊' },
+      'S5': { w: 768,  h: 576, name: '穿堂大廳' },
+      'S6': { w: 640,  h: 480, name: '輔導室' },
+      'S7': { w: 704,  h: 512, name: '學務處' },
+      'S8': { w: 512,  h: 384, name: '家：臥室' },
+      'S9': { w: 640,  h: 480, name: '家：客廳' }
+    },
+
+    sceneList: {
+      'S1': '圖片/S1校園主題圖.jpg',
+      'S2': '圖片/S2 校門口.jpg',
+      'S3': '圖片/S3教室.jpg',
+      'S4': '圖片/S4走廊.jpg',
+      'S5': '圖片/S5 穿堂.jpg',
+      'S6': '圖片/S6 輔導室.jpg',
+      'S7': '圖片/S7 學務處.jpg',
+      'S8': '圖片/S8臥室.jpg',
+      'S9': '圖片/S9 【家：客廳】.jpg'
+    },
+
+    portraitList: {
+      '主角_男孩': '角色/主角_男孩.png',
+      '主角_女孩': '角色/主角_女孩.png',
+      '主角_中性': '角色/主角_中性.png',
+      '老師': '角色/老師.png',
+      '導師': '角色/老師.png',
+      '同學甲': '角色/同學甲.png',
+      '同學乙': '角色/同學乙.png',
+      '同學丙': '角色/同學丙.png',
+      '同學丁': '角色/同學丁.png',
+      '同學戊': '角色/同學戊.png',
+      '生輔組長': '角色/生輔組長.png',
+      '媽媽': '角色/媽媽.png',
+      '同學乙的爸爸': '角色/同學乙的爸爸.png',
+      '同學甲的媽媽': '角色/同學甲的媽媽.png',
+      '輔導老師': '角色/專任輔導老師.png',
+      '專任輔導老師': '角色/專任輔導老師.png'
+    },
+
+    init() {
+      for (const [key, path] of Object.entries(this.sceneList)) {
+        const img = new Image();
+        img.src = path;
+        this.scenes[key] = img;
+      }
+      for (const [key, path] of Object.entries(this.portraitList)) {
+        const img = new Image();
+        img.src = path;
+        this.portraits[key] = img;
+      }
+    }
+  };
+
+  // ==========================================================================
+  // 4. 地圖全身走動小人與豐富 NPC 繪製器 (精緻五官、差異化角色與目標黃色光暈)
+  // ==========================================================================
+  const CharacterSpriteRenderer = {
+    draw(ctx, x, y, direction, frame, gender, scale = 1.0) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+
+      // 腳底柔和橢圓陰影
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 13, 5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(40, 32, 24, 0.2)';
+      ctx.fill();
+
+      const stepOffset = Math.sin(frame * Math.PI) * 4;
+      const bobbing = Math.abs(Math.sin(frame * Math.PI)) * 1.8;
+
+      let hairColor = '#4a3326';      // 男孩深棕
+      let shirtColor = '#f5f0e6';     // 米白制服
+      let bottomColor = '#2f3e58';    // 深藍褲/裙
+      let backpackColor = '#4a5d6e';  // 藍灰書包
+      let skinColor = '#fae2ce';
+
+      if (gender === 'girl') {
+        hairColor = '#302624';
+      } else if (gender === 'neutral') {
+        hairColor = '#2b2927';
+        shirtColor = '#e3edec';       // 體育服淺藍白
+        bottomColor = '#2d3748';
+      }
+
+      const bodyY = -22 - bobbing;
+
+      // --- A. 背面朝上走路 (方向：up) ---
+      if (direction === 'up') {
+        ctx.fillStyle = bottomColor;
+        ctx.fillRect(-8, bodyY + 12 - stepOffset, 5, 10);
+        ctx.fillRect(3, bodyY + 12 + stepOffset, 5, 10);
+
+        ctx.fillStyle = '#444';
+        ctx.fillRect(-9, bodyY + 20 - stepOffset, 7, 4);
+        ctx.fillRect(2, bodyY + 20 + stepOffset, 7, 4);
+
+        ctx.fillStyle = shirtColor;
+        ctx.fillRect(-10, bodyY, 20, 14);
+
+        // 藍灰雙肩書包（背後完整視角）
+        ctx.fillStyle = backpackColor;
+        ctx.beginPath();
+        ctx.roundRect(-8, bodyY + 1, 16, 12, 3);
+        ctx.fill();
+        ctx.fillStyle = '#657a8c';
+        ctx.fillRect(-6, bodyY + 7, 12, 4);
+
+        ctx.fillStyle = hairColor;
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 11, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (gender === 'girl') {
+          ctx.beginPath();
+          ctx.ellipse(0, bodyY - 6, 13, 8, 0, 0, Math.PI);
+          ctx.fill();
+        }
+      }
+
+      // --- B. 正面朝下走路 (方向：down) - 精緻靈動五官 ---
+      else if (direction === 'down') {
+        ctx.fillStyle = backpackColor;
+        ctx.fillRect(-11, bodyY + 2, 3, 10);
+        ctx.fillRect(8, bodyY + 2, 3, 10);
+
+        ctx.fillStyle = (gender === 'girl') ? skinColor : bottomColor;
+        ctx.fillRect(-8, bodyY + 12 + stepOffset, 5, 10);
+        ctx.fillRect(3, bodyY + 12 - stepOffset, 5, 10);
+
+        ctx.fillStyle = '#3a3a3a';
+        ctx.fillRect(-9, bodyY + 20 + stepOffset, 7, 4);
+        ctx.fillRect(2, bodyY + 20 - stepOffset, 7, 4);
+
+        ctx.fillStyle = bottomColor;
+        if (gender === 'girl') {
+          ctx.beginPath();
+          ctx.moveTo(-10, bodyY + 10);
+          ctx.lineTo(10, bodyY + 10);
+          ctx.lineTo(12, bodyY + 16);
+          ctx.lineTo(-12, bodyY + 16);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.fillRect(-10, bodyY + 10, 20, 6);
+        }
+
+        ctx.fillStyle = shirtColor;
+        ctx.fillRect(-10, bodyY, 20, 11);
+
+        ctx.fillStyle = '#dcd4c6';
+        ctx.beginPath();
+        ctx.moveTo(-4, bodyY);
+        ctx.lineTo(0, bodyY + 4);
+        ctx.lineTo(4, bodyY);
+        ctx.closePath();
+        ctx.fill();
+
+        // 臉型本體
+        ctx.fillStyle = skinColor;
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 1. 溫和細緻眉毛
+        ctx.strokeStyle = '#5a3d2e';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-6, bodyY - 13);
+        ctx.lineTo(-2, bodyY - 13.5);
+        ctx.moveTo(2, bodyY - 13.5);
+        ctx.lineTo(6, bodyY - 13);
+        ctx.stroke();
+
+        // 2. 靈動大眼睛 (黑瞳 + 白高光)
+        ctx.fillStyle = '#231c18';
+        ctx.beginPath();
+        ctx.ellipse(-4, bodyY - 10, 1.7, 2.2, 0, 0, Math.PI * 2);
+        ctx.ellipse(4, bodyY - 10, 1.7, 2.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-4.6, bodyY - 10.7, 0.7, 0, Math.PI * 2);
+        ctx.arc(3.4, bodyY - 10.7, 0.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 3. 雙頰健康微粉腮紅
+        ctx.fillStyle = 'rgba(240, 120, 110, 0.45)';
+        ctx.beginPath();
+        ctx.ellipse(-6.5, bodyY - 7, 2.2, 1.3, 0, 0, Math.PI * 2);
+        ctx.ellipse(6.5, bodyY - 7, 2.2, 1.3, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. 上揚微笑嘴巴
+        ctx.strokeStyle = '#c46a60';
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 7, 1.8, 0.2, Math.PI - 0.2);
+        ctx.stroke();
+
+        // 頭髮
+        ctx.fillStyle = hairColor;
+        if (gender === 'boy') {
+          ctx.beginPath();
+          ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+          ctx.lineTo(8, bodyY - 12);
+          ctx.lineTo(5, bodyY - 9);
+          ctx.lineTo(1, bodyY - 12);
+          ctx.lineTo(-3, bodyY - 8);
+          ctx.lineTo(-8, bodyY - 12);
+          ctx.closePath();
+          ctx.fill();
+        } else if (gender === 'girl') {
+          ctx.beginPath();
+          ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+          ctx.lineTo(10, bodyY - 5);
+          ctx.lineTo(6, bodyY - 10);
+          ctx.lineTo(-6, bodyY - 10);
+          ctx.lineTo(-10, bodyY - 5);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+          ctx.lineTo(6, bodyY - 10);
+          ctx.lineTo(-6, bodyY - 10);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      // --- C. 側面走路 (方向：left / right) - 精緻側臉五官 ---
+      else {
+        const isLeft = (direction === 'left');
+        const flip = isLeft ? -1 : 1;
+        ctx.scale(flip, 1);
+
+        ctx.fillStyle = backpackColor;
+        ctx.beginPath();
+        ctx.roundRect(-12, bodyY + 1, 7, 12, 2);
+        ctx.fill();
+
+        ctx.fillStyle = (gender === 'girl') ? skinColor : bottomColor;
+        ctx.fillRect(-3 - stepOffset, bodyY + 12, 5, 10);
+        ctx.fillRect(-1 + stepOffset, bodyY + 12, 5, 10);
+
+        ctx.fillStyle = '#3a3a3a';
+        ctx.fillRect(-2 - stepOffset, bodyY + 20, 6, 4);
+        ctx.fillRect(0 + stepOffset, bodyY + 20, 6, 4);
+
+        ctx.fillStyle = shirtColor;
+        ctx.fillRect(-7, bodyY, 13, 11);
+
+        if (gender === 'girl') {
+          ctx.fillStyle = bottomColor;
+          ctx.fillRect(-7, bodyY + 10, 13, 5);
+        }
+
+        ctx.fillStyle = shirtColor;
+        ctx.fillRect(-2 + stepOffset, bodyY + 2, 4, 9);
+
+        // 側臉輪廓
+        ctx.fillStyle = skinColor;
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 側面眉毛
+        ctx.strokeStyle = '#5a3d2e';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(2, bodyY - 13.5);
+        ctx.lineTo(6, bodyY - 13);
+        ctx.stroke();
+
+        // 側面眼睛 (含高光)
+        ctx.fillStyle = '#231c18';
+        ctx.beginPath();
+        ctx.ellipse(4, bodyY - 10, 1.5, 2.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(3.4, bodyY - 10.7, 0.6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 側面腮紅與小嘴
+        ctx.fillStyle = 'rgba(240, 120, 110, 0.45)';
+        ctx.beginPath();
+        ctx.ellipse(5, bodyY - 7, 2, 1.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#c46a60';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(2.5, bodyY - 6.5, 1.6, 0.1, Math.PI * 0.6);
+        ctx.stroke();
+
+        ctx.fillStyle = hairColor;
+        ctx.beginPath();
+        ctx.arc(-2, bodyY - 12, 10, Math.PI * 0.7, Math.PI * 1.9);
+        ctx.lineTo(6, bodyY - 11);
+        ctx.lineTo(2, bodyY - 6);
+        ctx.lineTo(-6, bodyY - 7);
+        ctx.closePath();
+        ctx.fill();
+
+        if (gender === 'girl') {
+          ctx.beginPath();
+          ctx.ellipse(-4, bodyY - 5, 5, 8, 0.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    },
+
+    // 繪製差異化 NPC 與路人學生 (支援目標淺黃色光暈圍繞與步伐動畫)
+    drawNPC(ctx, x, y, role, isTarget = false, direction = 'down', frame = 0) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      // 若為當前任務對話目標，腳底與身周亮起醒目的淺黃色呼吸光暈
+      if (isTarget) {
+        const pulse = (Math.sin(Date.now() / 380) + 1) * 0.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 22 + pulse * 6, 9 + pulse * 3, 0, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(248, 210, 85, ${0.35 + pulse * 0.25})`;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 16, 6, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(235, 175, 45, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 頭頂金色驚嘆號微標記
+        ctx.fillStyle = '#e8a530';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('！', 0, -42 - pulse * 3);
+      }
+
+      // 腳底微陰影
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 13, 5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(40, 32, 24, 0.2)';
+      ctx.fill();
+
+      const bodyY = -22;
+
+      // 1. 輔導老師 (米色針織開襟衫、長裙、知性金屬眼鏡、束髮)
+      if (role === 'counselor') {
+        ctx.fillStyle = '#4a382e'; // 長裙
+        ctx.fillRect(-9, bodyY + 12, 18, 12);
+        ctx.fillStyle = '#3a322d';
+        ctx.fillRect(-7, bodyY + 22, 5, 4);
+        ctx.fillRect(2, bodyY + 22, 5, 4);
+
+        ctx.fillStyle = '#eae2d0'; // 米白針織開襟衫
+        ctx.fillRect(-10, bodyY, 20, 14);
+        ctx.fillStyle = '#382f28'; // 內搭高領
+        ctx.fillRect(-3, bodyY, 6, 6);
+
+        // 臉部
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 細框眼鏡
+        ctx.strokeStyle = '#c49742';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(-6, bodyY - 12, 4.5, 3.5);
+        ctx.strokeRect(1.5, bodyY - 12, 4.5, 3.5);
+        ctx.beginPath();
+        ctx.moveTo(-1.5, bodyY - 10.5);
+        ctx.lineTo(1.5, bodyY - 10.5);
+        ctx.stroke();
+
+        // 溫和眼睛與微笑
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-3.8, bodyY - 10.5, 1.2, 0, Math.PI * 2);
+        ctx.arc(3.8, bodyY - 10.5, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#c46a60';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 7, 2, 0.2, Math.PI - 0.2);
+        ctx.stroke();
+
+        // 知性棕色長髮
+        ctx.fillStyle = '#423024';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+        ctx.lineTo(10, bodyY - 2);
+        ctx.lineTo(7, bodyY - 10);
+        ctx.lineTo(-7, bodyY - 10);
+        ctx.lineTo(-10, bodyY - 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 2. 學務主任 (深灰西裝、白襯衫、暗紅領帶、威嚴短髮)
+      else if (role === 'discipline_master') {
+        ctx.fillStyle = '#2d333b'; // 西裝褲
+        ctx.fillRect(-8, bodyY + 12, 5, 10);
+        ctx.fillRect(3, bodyY + 12, 5, 10);
+
+        ctx.fillStyle = '#3a424d'; // 深灰西裝外套
+        ctx.fillRect(-11, bodyY, 22, 13);
+        ctx.fillStyle = '#ffffff'; // 白襯衫 V 領
+        ctx.beginPath();
+        ctx.moveTo(-4, bodyY);
+        ctx.lineTo(0, bodyY + 6);
+        ctx.lineTo(4, bodyY);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#942b2b'; // 紅領帶
+        ctx.beginPath();
+        ctx.moveTo(-1.5, bodyY + 1);
+        ctx.lineTo(1.5, bodyY + 1);
+        ctx.lineTo(1, bodyY + 8);
+        ctx.lineTo(0, bodyY + 10);
+        ctx.lineTo(-1, bodyY + 8);
+        ctx.closePath();
+        ctx.fill();
+
+        // 臉部
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 濃眉與雙眼
+        ctx.strokeStyle = '#2b231d';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(-6, bodyY - 13);
+        ctx.lineTo(-1, bodyY - 12);
+        ctx.moveTo(1, bodyY - 12);
+        ctx.lineTo(6, bodyY - 13);
+        ctx.stroke();
+
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-3.5, bodyY - 9.5, 1.4, 0, Math.PI * 2);
+        ctx.arc(3.5, bodyY - 9.5, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 短灰黑髮
+        ctx.fillStyle = '#33383e';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+        ctx.lineTo(8, bodyY - 11);
+        ctx.lineTo(-8, bodyY - 11);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 3. 媽媽 (溫柔粉米色開襟衫、居家長裙、溫暖側身)
+      else if (role === 'mother') {
+        ctx.fillStyle = '#7a6458'; // 棕色長裙
+        ctx.fillRect(-9, bodyY + 12, 18, 12);
+
+        ctx.fillStyle = '#eddcd2'; // 粉米開襟衫
+        ctx.fillRect(-10, bodyY, 20, 13);
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 溫柔笑眼
+        ctx.strokeStyle = '#4a3326';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(-4, bodyY - 10, 2, Math.PI * 0.8, Math.PI * 1.8);
+        ctx.arc(4, bodyY - 10, 2, Math.PI * 0.8, Math.PI * 1.8);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(235, 130, 120, 0.45)';
+        ctx.beginPath();
+        ctx.ellipse(-6, bodyY - 7, 2, 1.2, 0, 0, Math.PI * 2);
+        ctx.ellipse(6, bodyY - 7, 2, 1.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 溫柔深栗色長髮
+        ctx.fillStyle = '#4a3326';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+        ctx.lineTo(10, bodyY - 3);
+        ctx.lineTo(6, bodyY - 9);
+        ctx.lineTo(-6, bodyY - 9);
+        ctx.lineTo(-10, bodyY - 3);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 4. 警衛叔叔 (淺藍制服、警衛大盤帽、深藍長褲)
+      else if (role === 'guard') {
+        ctx.fillStyle = '#1e2b3e'; // 深藍警衛褲
+        ctx.fillRect(-8, bodyY + 12, 5, 10);
+        ctx.fillRect(3, bodyY + 12, 5, 10);
+
+        ctx.fillStyle = '#9ec1e6'; // 淺藍制服
+        ctx.fillRect(-10, bodyY, 20, 13);
+        ctx.fillStyle = '#2d3e50'; // 深色皮帶
+        ctx.fillRect(-10, bodyY + 10, 20, 3);
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-3.5, bodyY - 10, 1.3, 0, Math.PI * 2);
+        ctx.arc(3.5, bodyY - 10, 1.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 警衛大盤帽
+        ctx.fillStyle = '#1e2b3e';
+        ctx.beginPath();
+        ctx.ellipse(0, bodyY - 13, 12, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(-9, bodyY - 19, 18, 7);
+        ctx.fillStyle = '#d4af37'; // 金色警徽
+        ctx.fillRect(-2, bodyY - 17, 4, 3);
+      }
+
+      // 5. 同學丙 (深藍毛衣背心、溫和笑容、友善支持同儕)
+      else if (role === 'classmate_c') {
+        ctx.fillStyle = '#2f3e58'; // 深藍校褲
+        ctx.fillRect(-8, bodyY + 12, 5, 10);
+        ctx.fillRect(3, bodyY + 12, 5, 10);
+
+        ctx.fillStyle = '#f5f0e6'; // 白襯衫
+        ctx.fillRect(-10, bodyY, 20, 12);
+        ctx.fillStyle = '#253d5b'; // 深藍毛衣背心
+        ctx.fillRect(-8, bodyY + 1, 16, 11);
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 溫和眼睛
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-4, bodyY - 10, 1.6, 0, Math.PI * 2);
+        ctx.arc(4, bodyY - 10, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(-4.5, bodyY - 10.7, 0.6, 0, Math.PI * 2);
+        ctx.arc(3.5, bodyY - 10.7, 0.6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#c46a60';
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 7, 2, 0.1, Math.PI - 0.1);
+        ctx.stroke();
+
+        // 平整俐落深黑髮
+        ctx.fillStyle = '#27292d';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+        ctx.lineTo(8, bodyY - 10);
+        ctx.lineTo(-8, bodyY - 10);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 6. 同學乙 (捲棕髮、深灰背心、較高身形)
+      else if (role === 'classmate_b') {
+        ctx.fillStyle = '#2b3648';
+        ctx.fillRect(-8, bodyY + 13, 5, 11);
+        ctx.fillRect(3, bodyY + 13, 5, 11);
+
+        ctx.fillStyle = '#ece4d4';
+        ctx.fillRect(-10, bodyY, 20, 13);
+        ctx.fillStyle = '#525a66'; // 深灰背心
+        ctx.fillRect(-8, bodyY + 1, 16, 12);
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-4, bodyY - 10, 1.4, 0, Math.PI * 2);
+        ctx.arc(4, bodyY - 10, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 棕色微捲髮
+        ctx.fillStyle = '#5c4033';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+        ctx.arc(-6, bodyY - 10, 4, 0, Math.PI * 2);
+        ctx.arc(6, bodyY - 10, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 7. 同學甲 (短黑微刺髮、白襯衫微開領)
+      else if (role === 'classmate_a') {
+        ctx.fillStyle = '#27384e';
+        ctx.fillRect(-8, bodyY + 12, 5, 10);
+        ctx.fillRect(3, bodyY + 12, 5, 10);
+
+        ctx.fillStyle = '#f7f4ec';
+        ctx.fillRect(-10, bodyY, 20, 11);
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-4, bodyY - 10, 1.5, 0, Math.PI * 2);
+        ctx.arc(4, bodyY - 10, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#2a2826';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+        ctx.lineTo(8, bodyY - 11);
+        ctx.lineTo(4, bodyY - 7);
+        ctx.lineTo(0, bodyY - 12);
+        ctx.lineTo(-4, bodyY - 7);
+        ctx.lineTo(-8, bodyY - 11);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 8. 路人女學生 (雙馬尾/短髮、百褶裙、支援走動步態)
+      else if (role === 'ambient_girl') {
+        const stepOffset = Math.sin(frame * Math.PI) * 3.5;
+        const bobbing = Math.abs(Math.sin(frame * Math.PI)) * 1.5;
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.fillRect(-7, bodyY + 12 - stepOffset, 4, 9);
+        ctx.fillRect(3, bodyY + 12 + stepOffset, 4, 9);
+
+        ctx.fillStyle = '#31445e'; // 百褶裙
+        ctx.fillRect(-9, bodyY + 9 - bobbing, 18, 6);
+
+        ctx.fillStyle = '#f7f4ed';
+        ctx.fillRect(-9, bodyY - bobbing, 18, 10);
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10 - bobbing, 9.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-3.5, bodyY - 10 - bobbing, 1.3, 0, Math.PI * 2);
+        ctx.arc(3.5, bodyY - 10 - bobbing, 1.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 雙馬尾長髮
+        ctx.fillStyle = '#3d2d22';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12 - bobbing, 10.5, Math.PI, 0);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(-10, bodyY - 7 - bobbing, 3, 7, 0.2, 0, Math.PI * 2);
+        ctx.ellipse(10, bodyY - 7 - bobbing, 3, 7, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 9. 路人男學生 (運動校服、支援走動步態)
+      else {
+        const stepOffset = Math.sin(frame * Math.PI) * 3.5;
+        const bobbing = Math.abs(Math.sin(frame * Math.PI)) * 1.5;
+
+        ctx.fillStyle = '#283647';
+        ctx.fillRect(-7, bodyY + 12 - stepOffset, 4, 10);
+        ctx.fillRect(3, bodyY + 12 + stepOffset, 4, 10);
+
+        ctx.fillStyle = '#e8eff5';
+        ctx.fillRect(-9, bodyY - bobbing, 18, 12);
+
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10 - bobbing, 9.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-3.5, bodyY - 10 - bobbing, 1.3, 0, Math.PI * 2);
+        ctx.arc(3.5, bodyY - 10 - bobbing, 1.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#3b312b';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12 - bobbing, 10.5, Math.PI, 0);
+        ctx.lineTo(8, bodyY - 10 - bobbing);
+        ctx.lineTo(-8, bodyY - 10 - bobbing);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+  };
+
+  // ==========================================================================
+  // 4.5 校園路人自主巡邏與漫步管理器 (路人學生自由走動、動畫步態、面向互動)
+  // ==========================================================================
+  const AmbientNPCManager = {
+    npcs: [
+      // S3 教室路人 (走道間漫步)
+      {
+        id: 'ambient_s3_1',
+        sceneId: 'S3',
+        role: 'ambient_boy',
+        x: 377,
+        y: 230,
+        minX: 360, maxX: 395, minY: 220, maxY: 480, // 中央大走道
+        speed: 25,
+        dir: 'down',
+        state: 'walk',
+        timer: 3.5,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學抬起頭笑了笑：『早自習要專心喔，今天有隨堂小考呢。』」'
+      },
+      {
+        id: 'ambient_s3_2',
+        sceneId: 'S3',
+        role: 'ambient_girl',
+        x: 715,
+        y: 350,
+        minX: 700, maxX: 740, minY: 230, maxY: 470, // 門口靠牆走道
+        speed: 22,
+        dir: 'up',
+        state: 'idle',
+        timer: 2.0,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學正忙著整理書包：『我的筆記本借隔壁班看，還沒拿回來呢。』」'
+      },
+
+      // S4 走廊路人 (長走廊漫步)
+      {
+        id: 'ambient_s4_1',
+        sceneId: 'S4',
+        role: 'ambient_girl',
+        x: 230,
+        y: 310,
+        minX: 180, maxX: 460, minY: 290, maxY: 340,
+        speed: 32,
+        dir: 'right',
+        state: 'walk',
+        timer: 4.0,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學指著布告欄：『下週好像有校園反霸凌宣導週的演講耶！』」'
+      },
+      {
+        id: 'ambient_s4_2',
+        sceneId: 'S4',
+        role: 'ambient_boy',
+        x: 950,
+        y: 310,
+        minX: 720, maxX: 1040, minY: 290, maxY: 340,
+        speed: 30,
+        dir: 'left',
+        state: 'walk',
+        timer: 3.2,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「走廊窗外的微風吹得很舒服：『站在這裡吹吹風最放鬆了。』」'
+      },
+
+      // S5 穿堂路人 (大廳寬敞穿梭)
+      {
+        id: 'ambient_s5_1',
+        role: 'ambient_boy',
+        sceneId: 'S5',
+        x: 230,
+        y: 280,
+        minX: 180, maxX: 560, minY: 220, maxY: 420,
+        speed: 30,
+        dir: 'right',
+        state: 'walk',
+        timer: 3.0,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「『穿堂的大鐘好像走得蠻準的，我要趕緊回教室了！』」'
+      },
+      {
+        id: 'ambient_s5_2',
+        role: 'ambient_girl',
+        sceneId: 'S5',
+        x: 520,
+        y: 340,
+        minX: 200, maxX: 580, minY: 220, maxY: 420,
+        speed: 28,
+        dir: 'left',
+        state: 'idle',
+        timer: 2.5,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學向你揮揮手：『早安！今天的天氣真好。』」'
+      },
+
+      // S1 校園主地圖路人 (操場與走道漫步)
+      {
+        id: 'ambient_s1_1',
+        role: 'ambient_girl',
+        sceneId: 'S1',
+        x: 480,
+        y: 420,
+        minX: 300, maxX: 600, minY: 360, maxY: 520,
+        speed: 35,
+        dir: 'right',
+        state: 'walk',
+        timer: 4.0,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與散步同學交談',
+        dialogue: '「同學看著藍天：『操場的陽光好溫暖，心情也跟著開朗起來了。』」'
+      },
+      {
+        id: 'ambient_s1_2',
+        role: 'ambient_boy',
+        sceneId: 'S1',
+        x: 780,
+        y: 500,
+        minX: 680, maxX: 980, minY: 400, maxY: 650,
+        speed: 32,
+        dir: 'left',
+        state: 'walk',
+        timer: 3.0,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與散步同學交談',
+        dialogue: '「同學抱著籃球走過：『下課一起去投籃吧！運動最抒壓了。』」'
+      }
+    ],
+
+    update(dt) {
+      if (GameState.dialogue.active) return;
+
+      const currentScene = GameState.currentSceneId;
+      this.npcs.forEach(npc => {
+        if (npc.sceneId !== currentScene) return;
+
+        npc.timer -= dt;
+
+        if (npc.state === 'idle') {
+          npc.frame = 0;
+          if (npc.timer <= 0) {
+            npc.state = 'walk';
+            npc.timer = 2.0 + Math.random() * 3.5;
+            const dirs = ['left', 'right', 'up', 'down'];
+            npc.dir = dirs[Math.floor(Math.random() * dirs.length)];
+          }
+        } else if (npc.state === 'walk') {
+          npc.animTimer += dt * 5;
+          npc.frame = npc.animTimer % 4;
+
+          let vx = 0;
+          let vy = 0;
+          if (npc.dir === 'left') vx = -npc.speed;
+          else if (npc.dir === 'right') vx = npc.speed;
+          else if (npc.dir === 'up') vy = -npc.speed;
+          else if (npc.dir === 'down') vy = npc.speed;
+
+          const nextX = npc.x + vx * dt;
+          const nextY = npc.y + vy * dt;
+
+          let turn = false;
+          if (nextX < npc.minX || nextX > npc.maxX) {
+            npc.dir = (npc.dir === 'left') ? 'right' : 'left';
+            turn = true;
+          } else {
+            npc.x = nextX;
+          }
+
+          if (nextY < npc.minY || nextY > npc.maxY) {
+            npc.dir = (npc.dir === 'up') ? 'down' : 'up';
+            turn = true;
+          } else {
+            npc.y = nextY;
+          }
+
+          if (npc.timer <= 0 || turn) {
+            npc.state = 'idle';
+            npc.timer = 1.5 + Math.random() * 2.5;
+          }
+        }
+      });
+    },
+
+    draw(ctx, currentSceneId) {
+      this.npcs.forEach(npc => {
+        if (npc.sceneId === currentSceneId) {
+          CharacterSpriteRenderer.drawNPC(ctx, npc.x, npc.y, npc.role, false, npc.dir, npc.frame);
+        }
+      });
+    },
+
+    getInteractableInScene(sceneId, px, py, maxDist = 45) {
+      for (const npc of this.npcs) {
+        if (npc.sceneId === sceneId) {
+          const dist = Math.hypot(px - npc.x, py - npc.y);
+          if (dist <= maxDist) {
+            if (Math.abs(px - npc.x) > Math.abs(py - npc.y)) {
+              npc.dir = px > npc.x ? 'right' : 'left';
+            } else {
+              npc.dir = py > npc.y ? 'down' : 'up';
+            }
+            npc.state = 'idle';
+            npc.timer = 4.0;
+            return {
+              id: npc.id,
+              x: npc.x,
+              y: npc.y,
+              radius: maxDist,
+              prompt: npc.prompt,
+              inspectText: npc.dialogue
+            };
+          }
+        }
+      }
+      return null;
+    }
+  };
+
+  // ==========================================================================
+  // 4.6 天色光影、環境氛圍與心理狀態濾鏡 (依據 GDD 7.2 與五維數值動態渲染)
+  // ==========================================================================
+  const AtmosphereRenderer = {
+    particles: [],
+
+    init() {
+      this.particles = [];
+      for (let i = 0; i < 24; i++) {
+        this.particles.push({
+          x: Math.random() * 1280,
+          y: Math.random() * 960,
+          vx: (Math.random() - 0.5) * 8,
+          vy: -8 - Math.random() * 12,
+          radius: 1.2 + Math.random() * 2.0,
+          alpha: 0.2 + Math.random() * 0.4
+        });
+      }
+    },
+
+    update(dt, w, h) {
+      this.particles.forEach(p => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        if (p.y < 0) {
+          p.y = h;
+          p.x = Math.random() * w;
+        }
+        if (p.x < 0) p.x = w;
+        if (p.x > w) p.x = 0;
+      });
+    },
+
+    draw(ctx, w, h, timeOfDay, stats) {
+      ctx.save();
+
+      // 1. 時間維度光影天色濾鏡
+      if (timeOfDay.includes('清晨')) {
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, 'rgba(180, 210, 240, 0.12)');
+        grad.addColorStop(0.5, 'rgba(255, 240, 210, 0.08)');
+        grad.addColorStop(1, 'rgba(255, 220, 160, 0.14)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      } else if (timeOfDay.includes('傍晚')) {
+        const grad = ctx.createLinearGradient(0, 0, w, h);
+        grad.addColorStop(0, 'rgba(240, 140, 60, 0.18)');
+        grad.addColorStop(0.5, 'rgba(220, 110, 70, 0.15)');
+        grad.addColorStop(1, 'rgba(160, 70, 90, 0.22)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      } else if (timeOfDay.includes('晚上') || timeOfDay.includes('夜深')) {
+        const grad = ctx.createRadialGradient(w / 2, h / 2, 80, w / 2, h / 2, Math.max(w, h));
+        grad.addColorStop(0, 'rgba(250, 220, 160, 0.05)');
+        grad.addColorStop(0.6, 'rgba(25, 30, 55, 0.28)');
+        grad.addColorStop(1, 'rgba(15, 18, 38, 0.45)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      } else {
+        ctx.fillStyle = 'rgba(255, 250, 235, 0.04)';
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      // 2. 心理狀態光影回饋
+      const stress = stats ? stats.stress : 50;
+
+      // A. 高壓力暗角與心跳紅暈
+      if (stress > 65) {
+        const stressRatio = Math.min(1.0, (stress - 65) / 35);
+        const pulse = (Math.sin(Date.now() / 350) + 1) * 0.5;
+        const vigGrad = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.75);
+
+        if (stress >= 85) {
+          vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+          vigGrad.addColorStop(0.7, `rgba(70, 15, 15, ${0.25 + pulse * 0.18 * stressRatio})`);
+          vigGrad.addColorStop(1, `rgba(90, 10, 10, ${0.45 + pulse * 0.25 * stressRatio})`);
+        } else {
+          vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+          vigGrad.addColorStop(0.7, `rgba(20, 15, 20, ${0.20 * stressRatio})`);
+          vigGrad.addColorStop(1, `rgba(10, 5, 15, ${0.40 * stressRatio})`);
+        }
+
+        ctx.fillStyle = vigGrad;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      // B. 平靜與希望光塵
+      if (stress < 55) {
+        ctx.fillStyle = 'rgba(255, 225, 140, 0.45)';
+        this.particles.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      ctx.restore();
+    }
+  };
+
+  // ==========================================================================
+  // 5. 全地圖場景互通拓撲與碰撞管理 (依據 GDD 6.2 與 6.3 精準建置)
+  // ==========================================================================
+  const SceneColliders = {
+    // 取得障礙物碰撞矩陣
+    getColliders(sceneId) {
+      if (sceneId === 'S3') {
+        // S3 教室 (800x576) - 依據底圖量測之真實 6 欄 x 4 列課桌椅規格
+        const colliders = [];
+        colliders.push({ x: 115, y: 140, w: 275, h: 55, tag: 'podium' });
+
+        // 24 組課桌椅完整包覆 (w:58, h:58)，垂直走道寬 50~66px，暢行無阻且絕不踩桌
+        const cols = [68, 176, 286, 410, 526, 634];
+        const rows = [235, 305, 375, 445];
+        for (let r = 0; r < rows.length; r++) {
+          for (let c = 0; c < cols.length; c++) {
+            colliders.push({
+              x: cols[c],
+              y: rows[r],
+              w: 58,
+              h: 58,
+              tag: (c === 2 && r === 1) ? 'player_desk' : 'desk'
+            });
+          }
+        }
+        colliders.push({ x: 0, y: 0, w: 800, h: 195, tag: 'wall_north' });
+        colliders.push({ x: 0, y: 0, w: 55, h: 576, tag: 'wall_west' });
+        colliders.push({ x: 0, y: 535, w: 800, h: 41, tag: 'wall_south' });
+        colliders.push({ x: 755, y: 0, w: 45, h: 420, tag: 'wall_east_top' });
+        colliders.push({ x: 755, y: 520, w: 45, h: 56, tag: 'wall_east_bottom' });
+        return colliders;
+      }
+      else if (sceneId === 'S4') {
+        // S4 走廊 (1280x576) - 南牆右側開口 (x >= 1040) 通往穿堂，樓梯底部設阻擋塊防止走出畫面
+        return [
+          { x: 0, y: 0, w: 1280, h: 220, tag: 'wall_north' },
+          { x: 0, y: 400, w: 1040, h: 176, tag: 'wall_south' }, // 南欄杆只擋到 1040，右側開放向下走
+          { x: 1040, y: 535, w: 200, h: 41, tag: 'wall_stairs_bottom' }, // 樓梯底部阻擋塊
+          { x: 0, y: 0, w: 60, h: 576, tag: 'wall_west' },
+          { x: 1240, y: 0, w: 40, h: 576, tag: 'wall_east' }
+        ];
+      }
+      else if (sceneId === 'S5') {
+        // S5 穿堂大廳 (768x576)
+        return [
+          { x: 0, y: 0, w: 320, h: 120, tag: 'wall' },
+          { x: 450, y: 0, w: 320, h: 120, tag: 'wall' },
+          { x: 0, y: 0, w: 60, h: 576, tag: 'wall' },
+          { x: 708, y: 0, w: 60, h: 576, tag: 'wall' },
+          { x: 190, y: 200, w: 60, h: 120, tag: 'pillar_left' },
+          { x: 518, y: 200, w: 60, h: 120, tag: 'pillar_right' }
+        ];
+      }
+      else if (sceneId === 'S6') {
+        // S6 輔導室 (640x480)
+        return [
+          { x: 0, y: 0, w: 640, h: 160, tag: 'wall_north' },
+          { x: 0, y: 0, w: 50, h: 480, tag: 'wall_west' },
+          { x: 590, y: 0, w: 50, h: 480, tag: 'wall_east' },
+          { x: 0, y: 440, w: 260, h: 40, tag: 'wall_south_left' },
+          { x: 380, y: 440, w: 260, h: 40, tag: 'wall_south_right' },
+          { x: 330, y: 255, w: 140, h: 100, tag: 'counseling_table' }
+        ];
+      }
+      else if (sceneId === 'S7') {
+        // S7 學務處 (704x512)
+        return [
+          { x: 0, y: 0, w: 704, h: 160, tag: 'wall_north' },
+          { x: 0, y: 0, w: 50, h: 512, tag: 'wall_west' },
+          { x: 654, y: 0, w: 50, h: 512, tag: 'wall_east' },
+          { x: 0, y: 470, w: 290, h: 42, tag: 'wall_south_left' },
+          { x: 410, y: 470, w: 294, h: 42, tag: 'wall_south_right' },
+          { x: 190, y: 190, w: 320, h: 150, tag: 'meeting_table' }
+        ];
+      }
+      else if (sceneId === 'S1') {
+        // S1 校園主地圖 (1280x960)
+        return [
+          { x: 0, y: 0, w: 580, h: 260, tag: 'building_left' },
+          { x: 700, y: 0, w: 580, h: 260, tag: 'building_right' },
+          { x: 0, y: 0, w: 40, h: 960, tag: 'boundary_west' },
+          { x: 1240, y: 0, w: 40, h: 960, tag: 'boundary_east' },
+          { x: 576, y: 326, w: 128, h: 55, tag: 'stage' },
+          { x: 0, y: 920, w: 580, h: 40, tag: 'fence_left' },
+          { x: 700, y: 920, w: 580, h: 40, tag: 'fence_right' }
+        ];
+      }
+      else if (sceneId === 'S2') {
+        // S2 校門口 (768x512)
+        const colliders = [
+          { x: 0, y: 0, w: 320, h: 60, tag: 'wall_left' },
+          { x: 448, y: 0, w: 320, h: 60, tag: 'wall_right' },
+          { x: 0, y: 0, w: 60, h: 512, tag: 'boundary' },
+          { x: 708, y: 0, w: 60, h: 512, tag: 'boundary' },
+          { x: 524, y: 132, w: 123, h: 120, tag: 'guard_booth' },
+          { x: 0, y: 430, w: 260, h: 82, tag: 'school_gate_fence_left' },
+          { x: 508, y: 430, w: 260, h: 82, tag: 'school_gate_fence_right' }
+        ];
+        // 尚未抵達結局時，中央鐵門關閉擋住；抵達結局時，中央鐵門開啟可自由步出校門！
+        if (!GameState.quest.completedNodes.has('node9') && GameState.quest.step < 10) {
+          colliders.push({ x: 260, y: 430, w: 248, h: 82, tag: 'school_gate_fence_mid' });
+        }
+        return colliders;
+      }
+      else if (sceneId === 'S8') {
+        // S8 家：臥室 (512x384) - 床在右側，門在左上方
+        return [
+          { x: 0, y: 0, w: 512, h: 130, tag: 'wall_north' },
+          { x: 0, y: 250, w: 40, h: 134, tag: 'wall_west_bottom' }, // 左側門在上方開放
+          { x: 0, y: 350, w: 512, h: 34, tag: 'wall_south' },
+          { x: 480, y: 0, w: 32, h: 384, tag: 'wall_east' },
+          { x: 330, y: 150, w: 150, h: 210, tag: 'bed' }, // 右側床鋪
+          { x: 130, y: 160, w: 90, h: 100, tag: 'desk' }, // 書桌
+          { x: 235, y: 120, w: 90, h: 130, tag: 'bookshelf' } // 書櫃
+        ];
+      }
+      else if (sceneId === 'S9') {
+        // S9 家：客廳 (640x480) - 電視在北中央，電話桌在右上，門在左下
+        return [
+          { x: 0, y: 0, w: 640, h: 140, tag: 'wall_north' },
+          { x: 0, y: 0, w: 40, h: 280, tag: 'wall_west_top' },
+          { x: 0, y: 420, w: 40, h: 60, tag: 'wall_west_bottom' }, // 左側門在 280~420 開放
+          { x: 0, y: 440, w: 640, h: 40, tag: 'wall_south' },
+          { x: 600, y: 0, w: 40, h: 480, tag: 'wall_east' },
+          { x: 370, y: 140, w: 140, h: 85, tag: 'tv_cabinet' }, // 電視櫃
+          { x: 535, y: 140, w: 75, h: 85, tag: 'phone_table' }, // 電視旁小桌子(電話)
+          { x: 70, y: 140, w: 230, h: 150, tag: 'sofa' },
+          { x: 250, y: 320, w: 140, h: 110, tag: 'dining_table' }
+        ];
+      }
+
+      // 預設四邊邊界
+      return [
+        { x: 0, y: 0, w: 800, h: 120, tag: 'wall' },
+        { x: 0, y: 0, w: 40, h: 600, tag: 'wall' },
+        { x: 0, y: 550, w: 800, h: 50, tag: 'wall' },
+        { x: 760, y: 0, w: 40, h: 600, tag: 'wall' }
+      ];
+    },
+
+    // 取得互動物件與場景傳送門 (全校園 100% 互通)
+    getInteractables(sceneId) {
+      if (sceneId === 'S3') {
+        // S3 教室
+        const items = [
+          {
+            id: 'door_to_s4',
+            x: 755,
+            y: 470,
+            radius: 50,
+            prompt: '按 [E] 走出教室前往走廊',
+            targetScene: 'S4',
+            spawn: { x: 190, y: 290, dir: 'right' }
+          },
+          // 路人同學 A (認真看書)
+          {
+            id: 'ambient_s3_1',
+            x: 195,
+            y: 275,
+            radius: 45,
+            prompt: '按 [E] 與同學交談',
+            inspectText: '「同學抬起頭笑了笑：『早自習要專心喔，今天有隨堂小考呢。』」'
+          },
+          // 路人同學 B (整理書包)
+          {
+            id: 'ambient_s3_2',
+            x: 495,
+            y: 415,
+            radius: 45,
+            prompt: '按 [E] 與同學交談',
+            inspectText: '「同學正忙著整理書包：『我的筆記本借隔壁班看，還沒拿回來呢。』」'
+          }
+        ];
+
+        // 如果節點 1 尚未完成，座位提供劇本觸發
+        if (!GameState.quest.completedNodes.has('node1')) {
+          items.push({
+            id: 'node1_desk',
+            x: 295 + 16,
+            y: 345 + 10,
+            radius: 52,
+            prompt: '按 [E] 檢查座位上的嘲笑紙條',
+            nodeId: 'node1'
+          });
+        } else {
+          // 已完成則提供一般探索對話，不重複跳劇本！
+          items.push({
+            id: 'node1_desk_done',
+            x: 295 + 16,
+            y: 345 + 10,
+            radius: 52,
+            prompt: '按 [E] 查看座位',
+            inspectText: '（桌上的嘲笑紙條已經妥善收好，抽屜也已經整理乾淨。）'
+          });
+        }
+
+        // 第 5 天清晨：同學丙在教室座位上支持主角 (Node 9 Q11)
+        if (GameState.quest.step === 9 && !GameState.quest.completedNodes.has('node9')) {
+          items.push({
+            id: 'node9_classmate_c',
+            x: 210,
+            y: 345,
+            radius: 55,
+            prompt: '按 [E] 與同學丙對話（聆聽同儕的溫暖支持）',
+            nodeId: 'node9'
+          });
+        } else if (GameState.quest.completedNodes.has('node9')) {
+          items.push({
+            id: 'node9_classmate_c_done',
+            x: 210,
+            y: 345,
+            radius: 55,
+            prompt: '按 [E] 查看同學丙',
+            inspectText: '「同學丙笑著對你說：『別擔心，有什麼事我們一起面對！』」'
+          });
+        }
+
+        return items;
+      }
+      else if (sceneId === 'S4') {
+        // S4 走廊：連接 S3教室、S6輔導室、S7學務處、下方S5穿堂
+        const items = [
+          // 門1: 回 S3 教室
+          {
+            id: 'door_to_s3',
+            x: 170,
+            y: 250,
+            radius: 60,
+            prompt: '按 [E] 進入班級教室 (S3)',
+            targetScene: 'S3',
+            spawn: { x: 700, y: 470, dir: 'left' }
+          },
+          // 門2: 進入 S6 輔導室
+          {
+            id: 'door_to_s6',
+            x: 637,
+            y: 250,
+            radius: 60,
+            prompt: '按 [E] 進入輔導室 (S6)',
+            targetScene: 'S6',
+            spawn: { x: 320, y: 420, dir: 'up' }
+          },
+          // 門3: 進入 S7 學務處
+          {
+            id: 'door_to_s7',
+            x: 877,
+            y: 250,
+            radius: 60,
+            prompt: '按 [E] 進入學務處 (S7)',
+            targetScene: 'S7',
+            spawn: { x: 350, y: 440, dir: 'up' }
+          },
+          // 下方通道: 通往下層 S5 穿堂 (依據走廊實際空間結構設在下方樓梯口)
+          {
+            id: 'door_to_s5',
+            x: 1120,
+            y: 520,
+            radius: 65,
+            prompt: '按 [E] 走下階梯前往穿堂大廳 (S5)',
+            targetScene: 'S5',
+            spawn: { x: 384, y: 80, dir: 'down' }
+          },
+          // 走廊布告欄前路人學生
+          {
+            id: 'ambient_s4_1',
+            x: 230,
+            y: 270,
+            radius: 50,
+            prompt: '按 [E] 與同學交談',
+            inspectText: '「同學指著布告欄：『下週好像有校園反霸凌宣導週的演講耶！』」'
+          },
+          // 走廊東側窗邊路人學生
+          {
+            id: 'ambient_s4_2',
+            x: 1000,
+            y: 270,
+            radius: 50,
+            prompt: '按 [E] 與同學交談',
+            inspectText: '「走廊窗外的微風吹得很舒服：『站在這裡吹吹風最放鬆了。』」'
+          }
+        ];
+
+        // 走廊劇情事件：Node 2（飲水機攔截事件）
+        if (GameState.quest.step === 2 && !GameState.quest.completedNodes.has('node2')) {
+          items.push({
+            id: 'node2_event',
+            x: 520,
+            y: 310,
+            radius: 60,
+            prompt: '按 [E] 查看飲水機附近的同學',
+            nodeId: 'node2'
+          });
+        } else if (GameState.quest.step === 5 && !GameState.quest.completedNodes.has('node5')) {
+          // Node 5（第 2 天午休走廊同學乙遭遇）
+          items.push({
+            id: 'node5_event',
+            x: 320,
+            y: 310,
+            radius: 60,
+            prompt: '按 [E] 面對走廊上的同學乙',
+            nodeId: 'node5'
+          });
+        }
+        return items;
+      }
+      else if (sceneId === 'S5') {
+        // S5 穿堂大廳：北接 S4 走廊，南出 S1 校園主地圖
+        const items = [
+          {
+            id: 'door_to_s4_from_s5',
+            x: 384,
+            y: 50,
+            radius: 60,
+            prompt: '按 [E] 走上階梯前往走廊 (S4)',
+            targetScene: 'S4',
+            spawn: { x: 1120, y: 460, dir: 'up' }
+          },
+          {
+            id: 'door_to_s1_from_s5',
+            x: 384,
+            y: 530,
+            radius: 60,
+            prompt: '按 [E] 步出穿堂前往校園 (S1)',
+            targetScene: 'S1',
+            spawn: { x: 640, y: 290, dir: 'down' }
+          },
+          // 穿堂立柱旁路人學生
+          {
+            id: 'ambient_s5_1',
+            x: 210,
+            y: 310,
+            radius: 50,
+            prompt: '按 [E] 與同學交談',
+            inspectText: '「『穿堂的大鐘好像走得蠻準的，我要趕緊回教室了！』」'
+          }
+        ];
+
+        // 穿堂劇情事件：Node 4（第 2 天穿堂同學丁戊閒話）
+        if (GameState.quest.step === 4 && !GameState.quest.completedNodes.has('node4')) {
+          items.push({
+            id: 'node4_event',
+            x: 384,
+            y: 310,
+            radius: 60,
+            prompt: '按 [E] 聆聽並面對同儕對話',
+            nodeId: 'node4'
+          });
+        }
+        return items;
+      }
+      else if (sceneId === 'S6') {
+        // S6 輔導室：門回 S4 走廊
+        const items = [
+          {
+            id: 'door_to_s4_from_s6',
+            x: 320,
+            y: 450,
+            radius: 60,
+            prompt: '按 [E] 離開輔導室回走廊 (S4)',
+            targetScene: 'S4',
+            spawn: { x: 637, y: 280, dir: 'down' }
+          }
+        ];
+        // Node 3（第 1 天向導師傾訴）
+        if (GameState.quest.step === 3 && !GameState.quest.completedNodes.has('node3')) {
+          items.push({
+            id: 'node3_event',
+            x: 380,
+            y: 280,
+            radius: 60,
+            prompt: '按 [E] 與輔導老師會談傾訴',
+            nodeId: 'node3'
+          });
+        } else {
+          items.push({
+            id: 's6_idle',
+            x: 380,
+            y: 280,
+            radius: 60,
+            prompt: '按 [E] 查看輔導室',
+            inspectText: '「輔導老師溫柔抬起頭：『先喝杯溫水深呼吸，這裡隨時都為你敞開喔。』」'
+          });
+        }
+        return items;
+      }
+      else if (sceneId === 'S7') {
+        // S7 學務處：門回 S4 走廊
+        const items = [
+          {
+            id: 'door_to_s4_from_s7',
+            x: 350,
+            y: 480,
+            radius: 60,
+            prompt: '按 [E] 離開學務處回走廊 (S4)',
+            targetScene: 'S4',
+            spawn: { x: 877, y: 280, dir: 'down' }
+          }
+        ];
+        // Node 6（第 3 天學務處三方家長會談）
+        if (GameState.quest.step === 6 && !GameState.quest.completedNodes.has('node6')) {
+          items.push({
+            id: 'node6_event',
+            x: 350,
+            y: 365,
+            radius: 55,
+            prompt: '按 [E] 入座參加三方會談',
+            nodeId: 'node6'
+          });
+        } else {
+          items.push({
+            id: 's7_idle',
+            x: 350,
+            y: 365,
+            radius: 55,
+            prompt: '按 [E] 查看會議長桌',
+            inspectText: '「學務主任沉穩地說：『在學校如果遇到任何同儕困擾或不當行為，一定要第一時間向師長反映。』」'
+          });
+        }
+        return items;
+      }
+      else if (sceneId === 'S1') {
+        // S1 校園主地圖：北接 S5 穿堂，南接 S2 校門口
+        return [
+          {
+            id: 'door_to_s5_from_s1',
+            x: 640,
+            y: 240,
+            radius: 65,
+            prompt: '按 [E] 進入教學大樓穿堂 (S5)',
+            targetScene: 'S5',
+            spawn: { x: 384, y: 490, dir: 'up' }
+          },
+          {
+            id: 'door_to_s2_from_s1',
+            x: 640,
+            y: 910,
+            radius: 65,
+            prompt: '按 [E] 前往校門口 (S2)',
+            targetScene: 'S2',
+            spawn: { x: 384, y: 90, dir: 'down' }
+          },
+          {
+            id: 'ambient_s1_1',
+            x: 520,
+            y: 380,
+            radius: 50,
+            prompt: '按 [E] 與散步同學交談',
+            inspectText: '「同學看著藍天：『操場的陽光好溫暖，心情也跟著開朗起來了。』」'
+          }
+        ];
+      }
+      else if (sceneId === 'S2') {
+        // S2 校門口：北接 S1，南為結局出校門
+        const items = [
+          {
+            id: 'door_to_s1_from_s2',
+            x: 384,
+            y: 40,
+            radius: 60,
+            prompt: '按 [E] 回到校園內部 (S1)',
+            targetScene: 'S1',
+            spawn: { x: 640, y: 860, dir: 'up' }
+          },
+          {
+            id: 'ambient_guard',
+            x: 500,
+            y: 220,
+            radius: 55,
+            prompt: '按 [E] 向警衛叔叔問好',
+            inspectText: '「警衛叔叔笑瞇瞇地向你敬禮：『同學早！放學回家路上一定要注意安全喔！』」'
+          }
+        ];
+        // 離開校門：完成全部 9 個節點或 step >= 10 即可走出校門邁向大結局！
+        if (GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10) {
+          items.push({
+            id: 'ending_gate',
+            x: 384,
+            y: 415,
+            radius: 120,
+            prompt: '按 [E] 走出校門，迎接晨光與結局',
+            isEndingGate: true
+          });
+        } else {
+          items.push({
+            id: 'gate_locked',
+            x: 384,
+            y: 415,
+            radius: 70,
+            prompt: '按 [E] 查看校門鐵柵欄',
+            inspectText: '「警衛叔叔提醒：上課期間校門維持關閉，請專注校園內的學習與生活。」'
+          });
+        }
+        return items;
+      }
+      else if (sceneId === 'S8') {
+        // S8 家：臥室 (512x384) - 門在左上方 (x:90, y:240)，床在右側 (x:320, y:270)
+        const items = [
+          {
+            id: 'door_to_s9',
+            x: 90,
+            y: 240,
+            radius: 55,
+            prompt: '按 [E] 走出臥室前往客廳 (S9)',
+            targetScene: 'S9',
+            spawn: { x: 140, y: 350, dir: 'right' }
+          }
+        ];
+        if (GameState.quest.step === 7 && !GameState.quest.completedNodes.has('node7')) {
+          items.push({
+            id: 'node7_event',
+            x: 320,
+            y: 270,
+            radius: 55,
+            prompt: '按 [E] 與媽媽敞開心扉交談',
+            nodeId: 'node7'
+          });
+        } else {
+          items.push({
+            id: 's8_desk',
+            x: 320,
+            y: 270,
+            radius: 55,
+            prompt: '按 [E] 查看床邊與書桌',
+            inspectText: '（媽媽輕輕撫摸你的頭：「孩子，勇敢把事情說出來，你做得很棒。」）'
+          });
+        }
+        return items;
+      }
+      else if (sceneId === 'S9') {
+        // S9 家：客廳 (640x480) - 門在左下 (x:100, y:350)，電話桌在右上 (x:550, y:270)
+        const items = [
+          {
+            id: 'door_to_s8',
+            x: 100,
+            y: 350,
+            radius: 55,
+            prompt: '按 [E] 回臥室 (S8)',
+            targetScene: 'S8',
+            spawn: { x: 120, y: 250, dir: 'right' }
+          }
+        ];
+        if (GameState.quest.step === 8 && !GameState.quest.completedNodes.has('node8')) {
+          items.push({
+            id: 'node8_event',
+            x: 550,
+            y: 220,
+            radius: 65,
+            prompt: '按 [E] 接聽電視旁小桌上的電話',
+            nodeId: 'node8'
+          });
+        } else {
+          items.push({
+            id: 's9_phone',
+            x: 550,
+            y: 220,
+            radius: 60,
+            prompt: '按 [E] 查看客廳電話機',
+            inspectText: '（客廳話筒靜靜放置在小桌上，方才導師溫暖的勉勵猶在耳畔。）'
+          });
+        }
+        return items;
+      }
+
+      return [];
+    }
+  };
+
+  // ==========================================================================
+  // 6. 核心遊戲引擎主物件 (Game)
+  // ==========================================================================
+  const Game = {
+    canvas: null,
+    ctx: null,
+    keys: {},
+    lastTime: 0,
+    currentInteractable: null,
+
+    // 當前畫面相機與縮放
+    camera: { x: 0, y: 0, scale: 1.0 },
+
+    init() {
+      this.canvas = document.getElementById('game-canvas');
+      this.ctx = this.canvas.getContext('2d');
+
+      AssetLoader.init();
+      this.bindEvents();
+      this.initCharacterPreviews();
+      this.checkSavedGame();
+      this.handleResize();
+
+      window.addEventListener('resize', () => this.handleResize());
+
+      // 啟動主渲染迴圈
+      requestAnimationFrame((t) => this.gameLoop(t));
+    },
+
+    // 視窗動態自適應 (滿版無黑邊)
+    handleResize() {
+      const viewport = document.getElementById('canvas-viewport');
+      if (viewport && this.canvas) {
+        this.canvas.width = viewport.clientWidth;
+        this.canvas.height = viewport.clientHeight;
+      }
+    },
+
+    // 綁定事件監聽
+    bindEvents() {
+      window.addEventListener('keydown', (e) => {
+        this.keys[e.code] = true;
+
+        if (GameState.dialogue.active) {
+          if (e.code === 'Space' || e.code === 'Enter') {
+            e.preventDefault();
+            this.advanceDialogue();
+          } else if (['Digit1', 'Digit2', 'Digit3', 'Numpad1', 'Numpad2', 'Numpad3'].includes(e.code)) {
+            const idx = parseInt(e.code.slice(-1)) - 1;
+            this.selectChoiceByIndex(idx);
+          }
+        } else if (GameState.screen === 'game') {
+          if (e.code === 'KeyE' || e.code === 'Space') {
+            e.preventDefault();
+            this.triggerInteraction();
+          }
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        this.keys[e.code] = false;
+      });
+
+      document.getElementById('btn-start-game').addEventListener('click', () => {
+        SoundFX.click();
+        this.switchScreen('select');
+      });
+
+      document.getElementById('btn-continue-game').addEventListener('click', () => {
+        SoundFX.click();
+        this.loadGame();
+      });
+
+      document.getElementById('btn-info').addEventListener('click', () => {
+        SoundFX.click();
+        document.getElementById('modal-info').classList.add('active');
+      });
+
+      document.getElementById('btn-close-info').addEventListener('click', () => {
+        SoundFX.click();
+        document.getElementById('modal-info').classList.remove('active');
+      });
+
+      const cards = document.querySelectorAll('.character-card');
+      cards.forEach(card => {
+        card.addEventListener('click', () => {
+          SoundFX.click();
+          cards.forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          GameState.selectedGender = card.dataset.gender;
+        });
+      });
+
+      document.getElementById('btn-back-to-cover').addEventListener('click', () => {
+        SoundFX.click();
+        this.switchScreen('cover');
+      });
+
+      document.getElementById('btn-confirm-char').addEventListener('click', () => {
+        SoundFX.positive();
+        this.startNewGame();
+      });
+
+      document.getElementById('btn-toggle-sound').addEventListener('click', () => {
+        GameState.soundEnabled = !GameState.soundEnabled;
+        document.getElementById('btn-toggle-sound').textContent = GameState.soundEnabled ? '🔊' : '🔇';
+      });
+
+      document.getElementById('btn-save').addEventListener('click', () => {
+        SoundFX.positive();
+        this.saveGame();
+        alert('遊戲進度已安全保存在本機瀏覽器中！');
+      });
+
+      document.getElementById('btn-home').addEventListener('click', () => {
+        if (confirm('確定要返回標題畫面嗎？（未儲存之即時位置將遺失）')) {
+          this.switchScreen('cover');
+        }
+      });
+
+      document.getElementById('dialogue-layer').addEventListener('click', (e) => {
+        if (e.target.closest('.choice-btn') || e.target.closest('.modal-backdrop')) return;
+        this.advanceDialogue();
+      });
+
+      const promptEl = document.getElementById('interact-prompt');
+      if (promptEl) {
+        promptEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.triggerInteraction();
+        });
+      }
+
+      // 頂部 HUD 雷達圖按鈕
+      const trophyBtn = document.getElementById('btn-hud-trophy');
+      if (trophyBtn) {
+        trophyBtn.addEventListener('click', () => {
+          SoundFX.positive();
+          this.openRadarModal();
+        });
+      }
+
+      // 雷達圖面板：返回遊戲繼續旅程按鈕
+      const backGameBtn = document.getElementById('btn-ending-back-to-game');
+      if (backGameBtn) {
+        backGameBtn.addEventListener('click', () => {
+          SoundFX.click();
+          this.switchScreen('game');
+        });
+      }
+
+      // 雷達圖面板：右上角 ✕ 關閉按鈕
+      const closeXBtn = document.getElementById('btn-ending-close-x');
+      if (closeXBtn) {
+        closeXBtn.addEventListener('click', () => {
+          SoundFX.click();
+          this.switchScreen('game');
+        });
+      }
+
+      // 結算畫面：重新體驗旅程按鈕
+      const restartBtn = document.getElementById('btn-restart-game');
+      if (restartBtn) {
+        restartBtn.addEventListener('click', () => {
+          SoundFX.positive();
+          this.switchScreen('select');
+        });
+      }
+
+      // 結算畫面：返回封面首頁按鈕
+      const toCoverBtn = document.getElementById('btn-ending-to-cover');
+      if (toCoverBtn) {
+        toCoverBtn.addEventListener('click', () => {
+          SoundFX.click();
+          this.switchScreen('cover');
+        });
+      }
+
+      this.bindMobileControls();
+    },
+
+    bindMobileControls() {
+      const bindBtn = (id, code) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); this.keys[code] = true; });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); this.keys[code] = false; });
+        btn.addEventListener('mousedown', (e) => { this.keys[code] = true; });
+        btn.addEventListener('mouseup', (e) => { this.keys[code] = false; });
+      };
+
+      bindBtn('dpad-up', 'KeyW');
+      bindBtn('dpad-down', 'KeyS');
+      bindBtn('dpad-left', 'KeyA');
+      bindBtn('dpad-right', 'KeyD');
+
+      const actionBtn = document.getElementById('btn-mobile-interact');
+      if (actionBtn) {
+        actionBtn.addEventListener('click', () => this.triggerInteraction());
+      }
+    },
+
+    initCharacterPreviews() {
+      const previewLoop = () => {
+        const time = Date.now() / 1000;
+        const frame = (time * 4) % 4;
+
+        ['boy', 'girl', 'neutral'].forEach(gender => {
+          const canvas = document.getElementById(`preview-${gender}`);
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            CharacterSpriteRenderer.draw(ctx, 32, 50, 'down', frame, gender, 1.35);
+          }
+        });
+
+        if (GameState.screen === 'select') {
+          requestAnimationFrame(previewLoop);
+        }
+      };
+      previewLoop();
+    },
+
+    switchScreen(screenName) {
+      GameState.screen = screenName;
+      document.querySelectorAll('.screen-panel').forEach(p => p.classList.remove('active'));
+
+      const hud = document.getElementById('hud-bar');
+
+      if (screenName === 'cover') {
+        document.getElementById('screen-cover').classList.add('active');
+        hud.classList.remove('visible');
+      } else if (screenName === 'select') {
+        document.getElementById('screen-select').classList.add('active');
+        hud.classList.remove('visible');
+        this.initCharacterPreviews();
+      } else if (screenName === 'game') {
+        document.getElementById('screen-game').classList.add('active');
+        this.handleResize();
+        setTimeout(() => hud.classList.add('visible'), 250);
+      } else if (screenName === 'ending') {
+        const endScreen = document.getElementById('screen-ending');
+        if (endScreen) endScreen.classList.add('active');
+        hud.classList.remove('visible');
+      }
+    },
+
+    startNewGame() {
+      GameState.stats = {
+        stress: 50,
+        peer: 30,
+        courage: 40,
+        safety: 35,
+        selfEsteem: 30
+      };
+      GameState.quest = {
+        step: 1,
+        activeNodeId: 'node1',
+        text: '請跟隨地面黃色箭頭，走到自己發光的座位查看',
+        completedNodes: new Set()
+      };
+      GameState.currentSceneId = 'S3';
+      GameState.day = 1;
+      GameState.timeOfDay = '清晨自習';
+
+      GameState.player.x = 700;
+      GameState.player.y = 470;
+      GameState.player.direction = 'left';
+
+      this.updateHUD();
+      this.updateQuestBanner();
+      this.switchScreen('game');
+
+      const playerPortraitPath = `角色/主角_${GameState.selectedGender === 'boy' ? '男孩' : (GameState.selectedGender === 'girl' ? '女孩' : '中性')}.png`;
+      document.getElementById('img-portrait-player').src = playerPortraitPath;
+
+      setTimeout(() => {
+        this.startPrologue();
+      }, 700);
+    },
+
+    startPrologue() {
+      if (!DialoguesDB || !DialoguesDB.prologue) return;
+
+      const lines = DialoguesDB.prologue.map(text => ({
+        speaker: '旁白',
+        text: text,
+        npc: null
+      }));
+
+      this.startDialogueSequence(lines, () => {
+        this.showToast('前情提要結束。請依地面淺黃箭頭指引，走到座位查看。');
+      });
+    },
+
+    saveGame() {
+      const saveData = {
+        selectedGender: GameState.selectedGender,
+        stats: GameState.stats,
+        quest: {
+          step: GameState.quest.step,
+          activeNodeId: GameState.quest.activeNodeId,
+          text: GameState.quest.text,
+          completed: Array.from(GameState.quest.completedNodes)
+        },
+        currentSceneId: GameState.currentSceneId,
+        day: GameState.day,
+        timeOfDay: GameState.timeOfDay,
+        playerPos: { x: GameState.player.x, y: GameState.player.y }
+      };
+      localStorage.setItem('dawn_academy_save', JSON.stringify(saveData));
+      this.checkSavedGame();
+    },
+
+    loadGame() {
+      const raw = localStorage.getItem('dawn_academy_save');
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw);
+        GameState.selectedGender = data.selectedGender || 'boy';
+        GameState.stats = data.stats || GameState.stats;
+        if (data.quest) {
+          GameState.quest.step = data.quest.step || 1;
+          GameState.quest.activeNodeId = data.quest.activeNodeId || 'node1';
+          GameState.quest.text = data.quest.text || '';
+          GameState.quest.completedNodes = new Set(data.quest.completed || []);
+        }
+        GameState.currentSceneId = data.currentSceneId || 'S3';
+        GameState.day = data.day || 1;
+        GameState.timeOfDay = data.timeOfDay || '清晨自習';
+        if (data.playerPos) {
+          GameState.player.x = data.playerPos.x;
+          GameState.player.y = data.playerPos.y;
+        }
+
+        this.updateHUD();
+        this.updateQuestBanner();
+        this.switchScreen('game');
+
+        const playerPortraitPath = `角色/主角_${GameState.selectedGender === 'boy' ? '男孩' : (GameState.selectedGender === 'girl' ? '女孩' : '中性')}.png`;
+        document.getElementById('img-portrait-player').src = playerPortraitPath;
+      } catch (e) {
+        alert('存檔讀取失敗');
+      }
+    },
+
+    checkSavedGame() {
+      const raw = localStorage.getItem('dawn_academy_save');
+      const btn = document.getElementById('btn-continue-game');
+      if (raw && btn) {
+        btn.disabled = false;
+        btn.textContent = '繼續旅程 (讀取存檔)';
+      }
+    },
+
+    // 更新任務目標橫條
+    updateQuestBanner() {
+      const el = document.getElementById('quest-text');
+      if (el) {
+        el.textContent = GameState.quest.text;
+      }
+    },
+
+    // 更新 HUD 與五維數值長條圖 (支援 2 秒浮動增減標籤)
+    updateHUD(deltas = null) {
+      const s = GameState.stats;
+      document.getElementById('hud-day').textContent = `Day ${GameState.day}・${GameState.timeOfDay}`;
+
+      const spec = AssetLoader.sceneSpecs[GameState.currentSceneId];
+      document.getElementById('hud-scene-name').textContent = `${GameState.currentSceneId} ${spec ? spec.name : ''}`;
+
+      // 壓力值
+      const stressVal = Math.min(100, Math.max(0, s.stress));
+      document.getElementById('stat-val-stress').textContent = `${stressVal} / 100`;
+      const stressFill = document.getElementById('stat-bar-stress');
+      stressFill.style.width = `${stressVal}%`;
+      stressFill.className = 'stat-bar-fill fill-stress';
+      if (stressVal < 60) {
+        stressFill.classList.add('stress-low');
+      } else if (stressVal < 85) {
+        stressFill.classList.add('stress-mid');
+      } else {
+        stressFill.classList.add('stress-high');
+      }
+
+      // 同儕、勇氣、安全、自我肯定
+      const updateBar = (id, val) => {
+        const clamped = Math.min(100, Math.max(0, val));
+        document.getElementById(`stat-val-${id}`).textContent = `${clamped} / 100`;
+        document.getElementById(`stat-bar-${id}`).style.width = `${clamped}%`;
+      };
+
+      updateBar('peer', s.peer);
+      updateBar('courage', s.courage);
+      updateBar('safety', s.safety);
+      updateBar('self', s.selfEsteem);
+
+      // 若有傳入增減數值 (deltas)，觸發頂部 2 秒浮動提示！
+      if (deltas) {
+        this.triggerDeltaBadge('delta-stress', deltas.stress, true);
+        this.triggerDeltaBadge('delta-peer', deltas.peer);
+        this.triggerDeltaBadge('delta-courage', deltas.courage);
+        this.triggerDeltaBadge('delta-safety', deltas.safety);
+        this.triggerDeltaBadge('delta-self', deltas.selfEsteem);
+      }
+    },
+
+    // 觸發數值增減浮動指示 (維持約 2 秒後優雅消失)
+    triggerDeltaBadge(elementId, val, isStress = false) {
+      if (!val || val === 0) return;
+      const el = document.getElementById(elementId);
+      if (!el) return;
+
+      const sign = val > 0 ? `+${val}` : `${val}`;
+      el.textContent = sign;
+
+      // 壓力上升為紅/負向，其他數值上升為綠/正向
+      let isPositive = val > 0;
+      if (isStress) isPositive = val < 0;
+
+      el.className = `stat-delta visible ${isPositive ? 'pos' : 'neg'}`;
+
+      clearTimeout(el._timer);
+      el._timer = setTimeout(() => {
+        el.className = 'stat-delta';
+      }, 2100);
+    },
+
+    // ========================================================================
+    // 7. 滿版相機運鏡、地圖移動與導引箭頭渲染
+    // ========================================================================
+    gameLoop(timestamp) {
+      if (!this.lastTime) this.lastTime = timestamp;
+      const dt = Math.min(0.1, (timestamp - this.lastTime) / 1000);
+      this.lastTime = timestamp;
+
+      if (GameState.screen === 'game') {
+        this.update(dt);
+        this.render();
+      }
+
+      requestAnimationFrame((t) => this.gameLoop(t));
+    },
+
+    update(dt) {
+      // 1. 更新路人學生自主漫步巡邏
+      AmbientNPCManager.update(dt);
+
+      // 2. 更新環境光影與平靜光塵微粒
+      const spec = AssetLoader.sceneSpecs[GameState.currentSceneId] || { w: 800, h: 576 };
+      AtmosphereRenderer.update(dt, spec.w, spec.h);
+
+      if (GameState.dialogue.active || GameState.breathing.active) {
+        GameState.player.moving = false;
+        return;
+      }
+
+      let dx = 0;
+      let dy = 0;
+
+      if (this.keys['KeyW'] || this.keys['ArrowUp']) dy -= 1;
+      if (this.keys['KeyS'] || this.keys['ArrowDown']) dy += 1;
+      if (this.keys['KeyA'] || this.keys['ArrowLeft']) dx -= 1;
+      if (this.keys['KeyD'] || this.keys['ArrowRight']) dx += 1;
+
+      if (dx !== 0 && dy !== 0) {
+        dx *= 0.7071;
+        dy *= 0.7071;
+      }
+
+      const p = GameState.player;
+      p.moving = (dx !== 0 || dy !== 0);
+
+      if (p.moving) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          p.direction = dx > 0 ? 'right' : 'left';
+        } else {
+          p.direction = dy > 0 ? 'down' : 'up';
+        }
+
+        p.animTimer += dt * 6;
+        p.frame = p.animTimer % 4;
+
+        // 滑移物理碰撞
+        const nextX = p.x + dx * p.speed * dt;
+        const nextY = p.y + dy * p.speed * dt;
+
+        if (!this.checkCollision(nextX, p.y)) {
+          p.x = nextX;
+        }
+        if (!this.checkCollision(p.x, nextY)) {
+          p.y = nextY;
+        }
+
+        // 大結局走出校門判定：若抵達校門出口步出學校
+        if (GameState.currentSceneId === 'S2' && (GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10)) {
+          if (p.y >= 430 && p.x >= 260 && p.x <= 508 && !GameState.dialogue.active) {
+            this.evaluateEnding();
+          }
+        }
+      } else {
+        p.frame = 0;
+      }
+
+      this.checkInteractables();
+    },
+
+    checkCollision(x, y) {
+      // 1. 全地圖世界絕對邊界檢查（防止走出底圖或消失在畫面外）
+      const spec = AssetLoader.sceneSpecs[GameState.currentSceneId];
+      if (spec) {
+        const margin = 14;
+        if (x < margin || x > spec.w - margin || y < margin || y > spec.h - margin) {
+          return true;
+        }
+      }
+
+      // 2. 場景內部障礙物與課桌椅碰撞檢測
+      const colliders = SceneColliders.getColliders(GameState.currentSceneId);
+      const pr = 7; // 腳底碰撞半徑
+
+      for (const box of colliders) {
+        if (
+          x + pr > box.x &&
+          x - pr < box.x + box.w &&
+          y + pr > box.y &&
+          y - pr < box.y + box.h
+        ) {
+          return true;
+        }
+      }
+      return false;
+    },
+
+    checkInteractables() {
+      const interactables = SceneColliders.getInteractables(GameState.currentSceneId);
+      const p = GameState.player;
+      let found = null;
+
+      // 先檢查固定互動物件與傳送門
+      for (const item of interactables) {
+        const dist = Math.hypot(p.x - item.x, p.y - item.y);
+        if (dist <= item.radius) {
+          found = item;
+          break;
+        }
+      }
+
+      // 若未觸發固定場景物件，檢查動態漫步的路人學生
+      if (!found) {
+        const ambientFound = AmbientNPCManager.getInteractableInScene(GameState.currentSceneId, p.x, p.y, 48);
+        if (ambientFound) {
+          found = ambientFound;
+        }
+      }
+
+      this.currentInteractable = found;
+      const promptEl = document.getElementById('interact-prompt');
+
+      if (found && !GameState.dialogue.active) {
+        promptEl.style.display = 'block';
+        promptEl.textContent = found.prompt;
+
+        // 轉換為螢幕畫面坐標
+        const screenPos = this.worldToScreen(found.x, found.y);
+        promptEl.style.left = `${screenPos.x}px`;
+        promptEl.style.top = `${screenPos.y - 38}px`;
+      } else {
+        promptEl.style.display = 'none';
+      }
+    },
+
+    triggerInteraction() {
+      if (!this.currentInteractable || GameState.dialogue.active) return;
+
+      SoundFX.click();
+      const item = this.currentInteractable;
+
+      if (item.nodeId) {
+        this.triggerNode(item.nodeId);
+      } else if (item.targetScene) {
+        this.changeScene(item.targetScene, item.spawn);
+      } else if (item.isEndingGate) {
+        this.evaluateEnding();
+      } else if (item.inspectText) {
+        this.showToast(item.inspectText);
+      }
+    },
+
+    changeScene(sceneId, spawn = null) {
+      GameState.currentSceneId = sceneId;
+      this.updateHUD();
+
+      if (spawn) {
+        GameState.player.x = spawn.x;
+        GameState.player.y = spawn.y;
+        GameState.player.direction = spawn.dir || 'down';
+      }
+
+      SoundFX.alert();
+
+      // 若進入客廳且處於接聽電話任務 (Node 8)，響起電話鈴聲！
+      if (this._phoneRingTimer) {
+        clearInterval(this._phoneRingTimer);
+        this._phoneRingTimer = null;
+      }
+
+      if (sceneId === 'S9' && GameState.quest.step === 8 && !GameState.quest.completedNodes.has('node8')) {
+        setTimeout(() => {
+          SoundFX.playTelephoneRing();
+        }, 400);
+
+        this._phoneRingTimer = setInterval(() => {
+          if (GameState.currentSceneId === 'S9' && GameState.quest.step === 8 && !GameState.quest.completedNodes.has('node8') && !GameState.dialogue.active) {
+            SoundFX.playTelephoneRing();
+          } else {
+            clearInterval(this._phoneRingTimer);
+            this._phoneRingTimer = null;
+          }
+        }, 4200);
+      }
+    },
+
+    // 世界座標轉螢幕座標 (精確對齊 Contain 全貌縮放視角)
+    worldToScreen(wx, wy) {
+      const c = this.camera;
+      const spec = AssetLoader.sceneSpecs[GameState.currentSceneId] || { w: 800, h: 576 };
+      return {
+        x: (wx - spec.w / 2) * c.scale + this.canvas.width / 2,
+        y: (wy - spec.h / 2) * c.scale + this.canvas.height / 2
+      };
+    },
+
+    // 各場景地板走道路徑拓撲網 (最短路徑導航，避免穿牆穿桌)
+    sceneWaypoints: {
+      'S3': [
+        { id: 'w1', x: 60,  y: 220, to: ['w2', 'w5'] },
+        { id: 'w2', x: 360, y: 220, to: ['w1', 'w3', 'w4'] },
+        { id: 'w3', x: 680, y: 220, to: ['w2', 'w7'] },
+        { id: 'w4', x: 360, y: 380, to: ['w2', 'w6', 'w_seat1', 'w_seatC'] },
+        { id: 'w5', x: 60,  y: 510, to: ['w1', 'w6'] },
+        { id: 'w6', x: 360, y: 510, to: ['w5', 'w7', 'w4'] },
+        { id: 'w7', x: 680, y: 510, to: ['w3', 'w6', 'w_door'] },
+        { id: 'w_door',  x: 755, y: 470, to: ['w7'] },
+        { id: 'w_seat1', x: 311, y: 355, to: ['w4', 'w2'] },
+        { id: 'w_seatC', x: 210, y: 345, to: ['w4', 'w1'] }
+      ],
+      'S4': [
+        { id: 'w_s3',  x: 170,  y: 270, to: ['w_c1'] },
+        { id: 'w_c1',  x: 190,  y: 310, to: ['w_s3', 'w_c2'] },
+        { id: 'w_c2',  x: 320,  y: 310, to: ['w_c1', 'w_c3'] },
+        { id: 'w_c3',  x: 520,  y: 310, to: ['w_c2', 'w_c4'] },
+        { id: 'w_c4',  x: 637,  y: 310, to: ['w_c3', 'w_s6', 'w_c5'] },
+        { id: 'w_s6',  x: 637,  y: 250, to: ['w_c4'] },
+        { id: 'w_c5',  x: 877,  y: 310, to: ['w_c4', 'w_s7', 'w_c6'] },
+        { id: 'w_s7',  x: 877,  y: 250, to: ['w_c5'] },
+        { id: 'w_c6',  x: 1120, y: 310, to: ['w_c5', 'w_s5'] },
+        { id: 'w_s5',  x: 1120, y: 520, to: ['w_c6'] } // 走廊通往下層穿堂之樓梯口 (下方)
+      ],
+      'S5': [
+        { id: 'w_n', x: 384, y: 80,  to: ['w_m'] },
+        { id: 'w_m', x: 384, y: 310, to: ['w_n', 'w_s'] },
+        { id: 'w_s', x: 384, y: 520, to: ['w_m'] }
+      ],
+      'S6': [
+        { id: 'w_door', x: 320, y: 440, to: ['w_mid'] },
+        { id: 'w_mid',  x: 320, y: 340, to: ['w_door', 'w_desk'] },
+        { id: 'w_desk', x: 380, y: 280, to: ['w_mid'] }
+      ],
+      'S7': [
+        { id: 'w_door', x: 350, y: 470, to: ['w_table'] },
+        { id: 'w_table',x: 350, y: 365, to: ['w_door'] }
+      ],
+      'S1': [
+        { id: 'w_n', x: 640, y: 260, to: ['w_m'] },
+        { id: 'w_m', x: 640, y: 580, to: ['w_n', 'w_s'] },
+        { id: 'w_s', x: 640, y: 910, to: ['w_m'] }
+      ],
+      'S2': [
+        { id: 'w_n', x: 384, y: 80,  to: ['w_m'] },
+        { id: 'w_m', x: 384, y: 250, to: ['w_n', 'w_g'] },
+        { id: 'w_g', x: 384, y: 415, to: ['w_m'] }
+      ],
+      'S8': [
+        { id: 'w_door', x: 90,  y: 240, to: ['w_mid'] }, // 臥室門在左上方
+        { id: 'w_mid',  x: 210, y: 260, to: ['w_door', 'w_bed'] },
+        { id: 'w_bed',  x: 320, y: 270, to: ['w_mid'] } // 媽媽在右側床邊
+      ],
+      'S9': [
+        { id: 'w_door',  x: 100, y: 350, to: ['w_mid'] }, // 回臥室門在左下
+        { id: 'w_mid',   x: 320, y: 350, to: ['w_door', 'w_table'] },
+        { id: 'w_table', x: 550, y: 270, to: ['w_mid'] } // 電視旁電話小桌在右上
+      ]
+    },
+
+    // 更新左上方單一羅盤箭頭角度 (動態旋轉指引)
+    updateNavArrow(player, targetLoc) {
+      const pointer = document.getElementById('nav-arrow-pointer');
+      if (!pointer) return;
+      if (!targetLoc) {
+        pointer.style.display = 'none';
+        return;
+      }
+      pointer.style.display = 'block';
+      const dx = targetLoc.x - player.x;
+      const dy = targetLoc.y - player.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist < 32) {
+        pointer.textContent = '●';
+        pointer.style.transform = 'scale(1.3)';
+        pointer.style.color = '#2e7d32';
+      } else {
+        pointer.textContent = '▲';
+        pointer.style.color = '#df9824';
+        const angleRad = Math.atan2(dy, dx);
+        const deg = angleRad * (180 / Math.PI) + 90;
+        pointer.style.transform = `rotate(${deg}deg)`;
+      }
+    },
+
+    // 在主角身周繪製環繞懸浮立體金色指引箭頭 (指向目標交互點)
+    drawPlayerNavArrow(ctx, player, targetLoc) {
+      if (!targetLoc || GameState.dialogue.active) return;
+
+      const dx = targetLoc.x - player.x;
+      const dy = targetLoc.y - player.y;
+      const dist = Math.hypot(dx, dy);
+
+      ctx.save();
+      ctx.translate(player.x, player.y - 12);
+
+      // 當距離小於 36px 時，表示已經抵達目標附近，改為腳底金色目標光環
+      if (dist < 36) {
+        const pulse = (Math.sin(Date.now() / 250) + 1) * 0.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 12, 16 + pulse * 4, 7 + pulse * 2, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = '#e8a530';
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+        ctx.restore();
+        return;
+      }
+
+      const angle = Math.atan2(dy, dx);
+      // 環繞主角半徑（約 34px）並加入微微呼吸浮動
+      const orbitPulse = Math.sin(Date.now() / 200) * 3.5;
+      const arrowR = 34 + orbitPulse;
+
+      const ax = Math.cos(angle) * arrowR;
+      const ay = Math.sin(angle) * arrowR;
+
+      ctx.translate(ax, ay);
+      ctx.rotate(angle);
+
+      // 箭頭發光陰影
+      ctx.shadowColor = 'rgba(240, 180, 50, 0.85)';
+      ctx.shadowBlur = 8;
+
+      // 繪製立體金色尖頭
+      ctx.beginPath();
+      ctx.moveTo(11, 0);          // 箭頭尖端（朝向目標）
+      ctx.lineTo(-4, -6.5);       // 左翼
+      ctx.lineTo(-1.5, 0);        // 凹槽
+      ctx.lineTo(-4, 6.5);        // 右翼
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(-4, 0, 11, 0);
+      grad.addColorStop(0, '#f9c846');
+      grad.addColorStop(1, '#fffae0');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.strokeStyle = '#b87514';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+
+      ctx.restore();
+    },
+
+    // 繪製目標地點淺黃色優雅呼吸光暈 (地面不繪製整排多餘箭頭，保持乾淨)
+    drawTargetAura(ctx, targetLoc) {
+      if (!targetLoc) return;
+      const pulse = (Math.sin(Date.now() / 650) + 1) * 0.5;
+      ctx.save();
+
+      // 外圈柔和呼吸黃暈
+      ctx.beginPath();
+      ctx.ellipse(targetLoc.x, targetLoc.y + 4, 26 + pulse * 7, 12 + pulse * 4, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(248, 208, 75, ${0.30 + pulse * 0.30})`;
+      ctx.fill();
+
+      // 內圈黃金光環
+      ctx.beginPath();
+      ctx.ellipse(targetLoc.x, targetLoc.y + 4, 16, 7, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(235, 170, 40, 0.9)';
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+
+      // 核心高光
+      ctx.beginPath();
+      ctx.arc(targetLoc.x, targetLoc.y + 4, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#e8a530';
+      ctx.fill();
+
+      // 目標懸浮指引標記
+      if (targetLoc.isFinal) {
+        ctx.fillStyle = '#e8a530';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('▼', targetLoc.x, targetLoc.y - 28 - pulse * 4);
+      }
+      ctx.restore();
+    },
+
+    // 計算當前指引目標座標 (用於左上方羅盤指針與地面黃色呼吸光暈)
+    getCurrentTargetLocation() {
+      const q = GameState.quest;
+      const sId = GameState.currentSceneId;
+
+      // S3 班級教室
+      if (sId === 'S3') {
+        if (!q.completedNodes.has('node1')) {
+          return { x: 311, y: 355, isFinal: true }; // 座位嘲笑紙條
+        } else if (q.step === 9 && !q.completedNodes.has('node9')) {
+          return { x: 210, y: 345, isFinal: true }; // 第 5 天：同學丙座位
+        } else {
+          return { x: 755, y: 470, isFinal: false }; // 走出教室門
+        }
+      }
+      // S4 走廊 (接到穿堂的位置在下方樓梯口 x:1120, y:520)
+      else if (sId === 'S4') {
+        if (q.step === 2 && !q.completedNodes.has('node2')) {
+          return { x: 520, y: 310, isFinal: true }; // 飲水機
+        } else if (q.step === 3 && !q.completedNodes.has('node3')) {
+          return { x: 637, y: 250, isFinal: false }; // 輔導室門
+        } else if (q.step === 4) {
+          return { x: 1120, y: 520, isFinal: false }; // 走下樓梯前往穿堂 (下方)
+        } else if (q.step === 5 && !q.completedNodes.has('node5')) {
+          return { x: 320, y: 310, isFinal: true }; // 同學乙
+        } else if (q.step === 6 && !q.completedNodes.has('node6')) {
+          return { x: 877, y: 250, isFinal: false }; // 學務處門
+        } else if (q.step >= 9) {
+          return { x: 1120, y: 520, isFinal: false }; // 大結局：走下樓梯前往穿堂 (下方)
+        }
+      }
+      // S5 穿堂
+      else if (sId === 'S5') {
+        if (q.step === 4 && !q.completedNodes.has('node4')) {
+          return { x: 384, y: 310, isFinal: true }; // 穿堂同儕閒話
+        } else if (q.step === 5) {
+          return { x: 384, y: 60, isFinal: false }; // 回走廊北階梯
+        } else if (q.step >= 9) {
+          return { x: 384, y: 530, isFinal: false }; // 大結局：步出穿堂往 S1
+        }
+      }
+      // S6 輔導室
+      else if (sId === 'S6') {
+        if (q.step === 3 && !q.completedNodes.has('node3')) {
+          return { x: 380, y: 280, isFinal: true }; // 導師傾訴會談
+        } else {
+          return { x: 320, y: 450, isFinal: false }; // 離開門
+        }
+      }
+      // S7 學務處
+      else if (sId === 'S7') {
+        if (q.step === 6 && !q.completedNodes.has('node6')) {
+          return { x: 350, y: 365, isFinal: true }; // 三方會談長桌前
+        } else {
+          return { x: 350, y: 480, isFinal: false }; // 離開門
+        }
+      }
+      // S8 家：臥室 (門在左上 x:90, y:240，床在右側 x:320, y:270)
+      else if (sId === 'S8') {
+        if (q.step === 7 && !q.completedNodes.has('node7')) {
+          return { x: 320, y: 270, isFinal: true }; // 臥室媽媽談話
+        } else {
+          return { x: 90, y: 240, isFinal: false }; // 往客廳門 (左上方)
+        }
+      }
+      // S9 家：客廳 (門在左下 x:100, y:350，電話在右上小桌 x:550, y:270)
+      else if (sId === 'S9') {
+        if (q.step === 8 && !q.completedNodes.has('node8')) {
+          return { x: 550, y: 270, isFinal: true }; // 導師關心電話 (右上桌子)
+        } else {
+          return { x: 100, y: 350, isFinal: false }; // 回臥室門 (左下方)
+        }
+      }
+      // S1 校園主地圖
+      else if (sId === 'S1') {
+        if (q.step >= 9) {
+          return { x: 640, y: 910, isFinal: false }; // 大結局：前往校門口
+        } else {
+          return { x: 640, y: 250, isFinal: false };
+        }
+      }
+      // S2 校門口
+      else if (sId === 'S2') {
+        if (q.completedNodes.has('node9') || q.step >= 10) {
+          return { x: 384, y: 420, isFinal: true }; // 大結局：走出校門
+        } else {
+          return { x: 384, y: 415, isFinal: false };
+        }
+      }
+
+      return null;
+    },
+
+    // 渲染遊戲世界 (Contain 縮放全貌視野、角色身周導引箭頭、自由漫步路人、動態天色光影)
+    render() {
+      const ctx = this.ctx;
+      const cw = this.canvas.width;
+      const ch = this.canvas.height;
+
+      // 畫布背景填充典雅深木色底，消除刺眼純黑邊
+      ctx.fillStyle = '#1e1a17';
+      ctx.fillRect(0, 0, cw, ch);
+
+      // 取得當前場景規格
+      const spec = AssetLoader.sceneSpecs[GameState.currentSceneId] || { w: 800, h: 576 };
+
+      // Contain 縮放計算：整張場景圖片剛好完整顯示在畫面上，絕不裁切，一眼掌握全貌
+      const scale = Math.min(cw / spec.w, ch / spec.h);
+      this.camera.scale = scale;
+      this.camera.x = spec.w / 2;
+      this.camera.y = spec.h / 2;
+      const p = GameState.player;
+
+      ctx.save();
+      ctx.translate(cw / 2, ch / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-spec.w / 2, -spec.h / 2);
+
+      // 1. 繪製手繪背景圖
+      const sceneImg = AssetLoader.scenes[GameState.currentSceneId];
+      if (sceneImg && sceneImg.complete) {
+        ctx.drawImage(sceneImg, 0, 0, spec.w, spec.h);
+      } else {
+        ctx.fillStyle = '#f7f4ea';
+        ctx.fillRect(0, 0, spec.w, spec.h);
+      }
+
+      // 2. 指引目標：地面呼吸光暈與左上方羅盤
+      const targetLoc = this.getCurrentTargetLocation();
+
+      if (targetLoc) {
+        this.updateNavArrow(p, targetLoc);
+        if (!GameState.dialogue.active) {
+          this.drawTargetAura(ctx, targetLoc);
+        }
+      }
+
+      // 3. 繪製各場景關鍵劇情 NPC
+      const sId = GameState.currentSceneId;
+      const q = GameState.quest;
+
+      if (sId === 'S3') {
+        // 同學丙 (Day 5 是支持主角的對話目標，其餘時間坐在座位)
+        const isTargetC = (q.step === 9 && !q.completedNodes.has('node9'));
+        CharacterSpriteRenderer.drawNPC(ctx, 210, 345, 'classmate_c', isTargetC, 'down');
+
+        // 同學甲 (前段時間出現在教室)
+        if (!q.completedNodes.has('node1')) {
+          CharacterSpriteRenderer.drawNPC(ctx, 345, 320, 'classmate_a', false, 'left');
+        }
+      }
+      else if (sId === 'S4') {
+        // Node 2 (飲水機攔截事件)：同學甲與同學乙圍住飲水機
+        if (q.step === 2 && !q.completedNodes.has('node2')) {
+          CharacterSpriteRenderer.drawNPC(ctx, 505, 310, 'classmate_a', true, 'right');
+          CharacterSpriteRenderer.drawNPC(ctx, 535, 310, 'classmate_b', false, 'left');
+        }
+        // Node 5 (午休走廊遭遇)：同學乙
+        else if (q.step === 5 && !q.completedNodes.has('node5')) {
+          CharacterSpriteRenderer.drawNPC(ctx, 320, 310, 'classmate_b', true, 'down');
+        }
+      }
+      else if (sId === 'S5') {
+        // Node 4 (同儕閒話事件)
+        if (q.step === 4 && !q.completedNodes.has('node4')) {
+          CharacterSpriteRenderer.drawNPC(ctx, 370, 310, 'classmate_a', true, 'right');
+          CharacterSpriteRenderer.drawNPC(ctx, 400, 310, 'classmate_b', true, 'left');
+        }
+      }
+      else if (sId === 'S6') {
+        // 輔導室：輔導老師長駐
+        const isTargetCounselor = (q.step === 3 && !q.completedNodes.has('node3'));
+        CharacterSpriteRenderer.drawNPC(ctx, 380, 240, 'counselor', isTargetCounselor, 'down');
+      }
+      else if (sId === 'S7') {
+        // 學務處：學務主任長駐
+        const isTargetDiscipline = (q.step === 6 && !q.completedNodes.has('node6'));
+        CharacterSpriteRenderer.drawNPC(ctx, 350, 160, 'discipline_master', isTargetDiscipline, 'down');
+
+        // 三方會談期間：媽媽陪同出席
+        if (isTargetDiscipline) {
+          CharacterSpriteRenderer.drawNPC(ctx, 160, 260, 'mother', false, 'right');
+        }
+      }
+      else if (sId === 'S2') {
+        // 校門口：警衛叔叔
+        CharacterSpriteRenderer.drawNPC(ctx, 500, 220, 'guard', false, 'down');
+      }
+      else if (sId === 'S8') {
+        // 臥室：第 4 天媽媽談話 (床邊 320, 270)
+        if (q.step === 7 && !q.completedNodes.has('node7')) {
+          CharacterSpriteRenderer.drawNPC(ctx, 320, 270, 'mother', true, 'left');
+        }
+      }
+      else if (sId === 'S9') {
+        // 客廳：電視旁小桌上的電話機微光與鈴響提示
+        if (q.step === 8 && !q.completedNodes.has('node8')) {
+          const phonePulse = (Math.sin(Date.now() / 320) + 1) * 0.5;
+          ctx.save();
+          // 電話桌光暈
+          ctx.beginPath();
+          ctx.arc(550, 215, 22 + phonePulse * 7, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(245, 185, 45, ${0.35 + phonePulse * 0.35})`;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(550, 215, 11, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(235, 160, 30, 0.95)';
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+
+          // 叮鈴鈴來電聲波震動符號
+          ctx.fillStyle = '#d4881e';
+          ctx.font = 'bold 15px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('☎ 鈴～', 550, 182 - phonePulse * 3);
+          ctx.restore();
+        }
+      }
+
+      // 4. 繪製全校園自由走動漫步的路人學生！
+      AmbientNPCManager.draw(ctx, sId);
+
+      // 5. 繪製玩家角色 (全身走動小人，精緻靈動五官)
+      CharacterSpriteRenderer.draw(
+        ctx,
+        p.x,
+        p.y,
+        p.direction,
+        p.frame,
+        GameState.selectedGender,
+        1.1
+      );
+
+      // 6. 在主角身周繪製環繞懸浮立體金色指引箭頭！
+      this.drawPlayerNavArrow(ctx, p, targetLoc);
+
+      // 7. 疊加全場景動態天色光影、環境氛圍與心理狀態濾鏡！
+      AtmosphereRenderer.draw(ctx, spec.w, spec.h, GameState.timeOfDay, GameState.stats);
+
+      ctx.restore();
+    },
+
+    // ========================================================================
+    // 8. 視覺小說對話系統 (支援心靈小提醒與自主操作節奏)
+    // ========================================================================
+    triggerNode(nodeId) {
+      if (this._phoneRingTimer) {
+        clearInterval(this._phoneRingTimer);
+        this._phoneRingTimer = null;
+      }
+
+      if (!DialoguesDB || !DialoguesDB.nodes) return;
+      if (GameState.quest.completedNodes.has(nodeId)) {
+        this.showToast('此事件已經處理完成。請依目標指引前往下一地點。');
+        return;
+      }
+
+      const node = DialoguesDB.nodes.find(n => n.id === nodeId);
+      if (!node) return;
+
+      GameState.dialogue.currentNodeData = node;
+      GameState.dialogue.inSubQuestion = false;
+
+      const lines = [];
+      if (node.intro && node.intro.length) {
+        node.intro.forEach(item => {
+          if (item.type === 'narrative') {
+            lines.push({ speaker: '旁白', text: item.text, npc: null });
+          } else {
+            lines.push({ speaker: item.speaker, text: item.text, npc: item.speaker });
+          }
+        });
+      }
+
+      this.startDialogueSequence(lines, () => {
+        this.presentQuestion(node.question);
+      });
+    },
+
+    startDialogueSequence(lines, onComplete) {
+      GameState.dialogue.active = true;
+      GameState.dialogue.textQueue = [...lines];
+      GameState.dialogue.onComplete = onComplete;
+
+      document.getElementById('dialogue-layer').classList.add('active');
+      document.getElementById('choices-container').style.display = 'none';
+      document.getElementById('feedback-card').style.display = 'none';
+      document.getElementById('dialogue-prompt').style.display = 'block';
+
+      this.advanceDialogue();
+    },
+
+    advanceDialogue() {
+      const d = GameState.dialogue;
+
+      if (d.isTyping) {
+        clearInterval(d.typewriterTimer);
+        d.isTyping = false;
+        document.getElementById('dialogue-content').textContent = d.currentLine.text;
+        return;
+      }
+
+      if (d.waitingChoice) return;
+
+      if (d.textQueue.length > 0) {
+        d.currentLine = d.textQueue.shift();
+        this.displayLine(d.currentLine);
+      } else {
+        if (d.onComplete) {
+          const cb = d.onComplete;
+          d.onComplete = null;
+          cb();
+        } else {
+          this.closeDialogue();
+        }
+      }
+    },
+
+    displayLine(line) {
+      const d = GameState.dialogue;
+      const speakerEl = document.getElementById('speaker-name');
+      speakerEl.textContent = line.speaker || '你';
+
+      // 若是心靈小提醒，套用溫暖色調標籤
+      if (line.isTip) {
+        speakerEl.style.background = 'linear-gradient(135deg, #d98a2b, #be5b3b)';
+      } else {
+        speakerEl.style.background = 'var(--primary-wood)';
+      }
+
+      // 立繪切換 (透明去背圖)
+      const npcWrapper = document.getElementById('portrait-npc');
+      const npcImg = document.getElementById('img-portrait-npc');
+      const playerWrapper = document.getElementById('portrait-player');
+
+      if (line.npc && AssetLoader.portraits[line.npc]) {
+        npcImg.src = AssetLoader.portraitList[line.npc];
+        npcWrapper.classList.add('active');
+        if (line.speaker === '你') {
+          playerWrapper.classList.remove('dimmed');
+          npcWrapper.classList.add('dimmed');
+        } else {
+          playerWrapper.classList.add('dimmed');
+          npcWrapper.classList.remove('dimmed');
+        }
+      } else {
+        npcWrapper.classList.remove('active');
+        playerWrapper.classList.remove('dimmed');
+      }
+
+      // 打字機動畫效果
+      const contentEl = document.getElementById('dialogue-content');
+      contentEl.textContent = '';
+      d.isTyping = true;
+      let charIdx = 0;
+
+      SoundFX.click();
+      clearInterval(d.typewriterTimer);
+      d.typewriterTimer = setInterval(() => {
+        if (charIdx < line.text.length) {
+          contentEl.textContent += line.text[charIdx];
+          charIdx++;
+        } else {
+          clearInterval(d.typewriterTimer);
+          d.isTyping = false;
+        }
+      }, 24);
+    },
+
+    // 展現問題與三個選項 (A, B, C)
+    presentQuestion(qData) {
+      if (!qData) {
+        this.closeDialogue();
+        return;
+      }
+
+      const d = GameState.dialogue;
+      d.waitingChoice = true;
+      document.getElementById('dialogue-prompt').style.display = 'none';
+
+      document.getElementById('speaker-name').textContent = '抉擇時刻';
+      document.getElementById('dialogue-content').textContent = qData.prompt || '這時候，你會怎麼做？';
+
+      const container = document.getElementById('choices-container');
+      container.innerHTML = '';
+      container.style.display = 'flex';
+
+      const optionsList = qData.choices || qData.options || [];
+
+      optionsList.forEach((opt, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'choice-btn';
+        const letterKey = opt.letter || opt.key || String.fromCharCode(65 + idx);
+        btn.innerHTML = `<span class="choice-key">${letterKey}</span> <span>${opt.text}</span>`;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.handleOptionChosen(opt);
+        });
+        container.appendChild(btn);
+      });
+    },
+
+    selectChoiceByIndex(idx) {
+      if (!GameState.dialogue.waitingChoice) return;
+      const btns = document.querySelectorAll('.choice-btn');
+      if (btns && btns[idx]) {
+        btns[idx].click();
+      }
+    },
+
+    // 處理選項結算 (數值增減2秒浮動回饋 ＋ 心靈小提醒)
+    handleOptionChosen(option) {
+      const d = GameState.dialogue;
+      d.waitingChoice = false;
+      document.getElementById('choices-container').style.display = 'none';
+
+      // 1. 數值變更結算
+      const eff = option.effects || { stress: 0, peer: 0, courage: 0, safety: 0, selfEsteem: 0 };
+      GameState.stats.stress = Math.min(100, Math.max(0, GameState.stats.stress + (eff.stress || 0)));
+      GameState.stats.peer = Math.min(100, Math.max(0, GameState.stats.peer + (eff.peer || 0)));
+      GameState.stats.courage = Math.min(100, Math.max(0, GameState.stats.courage + (eff.courage || 0)));
+      GameState.stats.safety = Math.min(100, Math.max(0, GameState.stats.safety + (eff.safety || 0)));
+      GameState.stats.selfEsteem = Math.min(100, Math.max(0, GameState.stats.selfEsteem + (eff.selfEsteem || 0)));
+
+      // 觸發頂部 2 秒浮動增減標籤回饋！
+      this.updateHUD(eff);
+
+      if (eff.stress > 0) {
+        SoundFX.stressUp();
+      } else {
+        SoundFX.positive();
+      }
+
+      // 2. 準備後續對話隊列 (角色台詞 ＋ 劇本心靈小提醒)
+      const responseLines = [];
+      const repliesList = option.replies || option.response || [];
+      repliesList.forEach(r => {
+        responseLines.push({ speaker: r.speaker || '同學甲', text: r.text, npc: r.speaker || '同學甲' });
+      });
+
+      // 將劇本中的「小提醒」作為專屬對話台詞呈現，讓學生清晰閱讀理解
+      if (option.tip) {
+        responseLines.push({
+          speaker: '💡 心靈小提醒',
+          text: option.tip,
+          npc: null,
+          isTip: true
+        });
+      }
+
+      this.startDialogueSequence(responseLines, () => {
+        // 3. 檢查是否觸發壓力過載 (>= 100)
+        if (GameState.stats.stress >= 100) {
+          this.triggerStressOverload();
+          return;
+        }
+
+        // 4. 檢查是否有子問題 (如 Node 3 的 Q4，Node 5 的 Q7)
+        const node = d.currentNodeData;
+        if (node && node.subQuestion && !d.inSubQuestion) {
+          d.inSubQuestion = true;
+          if (node.bridge && node.bridge.length) {
+            const bridgeLines = node.bridge.map(b => ({ speaker: b.speaker || '旁白', text: b.text, npc: b.speaker }));
+            this.startDialogueSequence(bridgeLines, () => {
+              this.presentQuestion(node.subQuestion);
+            });
+            return;
+          } else {
+            this.presentQuestion(node.subQuestion);
+            return;
+          }
+        }
+
+        // 5. 當前節點正式完成！關閉對話，交由玩家自主自由操控移動！
+        this.completeCurrentNode(node ? node.id : 'node1');
+      });
+    },
+
+    // 跨天與放學黑底白字轉場標題卡 (支援西敏寺放學鐘聲)
+    showDayTransition({ badge, title, subtitle, playBell = false }, onComplete) {
+      const modal = document.getElementById('modal-day-transition');
+      if (!modal) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      document.getElementById('trans-badge').textContent = badge || '';
+      document.getElementById('trans-title').textContent = title || '';
+      document.getElementById('trans-subtitle').textContent = subtitle || '';
+
+      modal.classList.add('active');
+
+      if (playBell) {
+        SoundFX.playCampusBell();
+      } else {
+        SoundFX.positive();
+      }
+
+      let isProceeding = false;
+      const proceed = (e) => {
+        if (e && e.type === 'keydown' && e.code !== 'Space' && e.code !== 'Enter') return;
+        if (isProceeding) return;
+        isProceeding = true;
+
+        window.removeEventListener('keydown', proceed);
+        modal.removeEventListener('click', proceed);
+
+        SoundFX.click();
+        modal.classList.remove('active');
+        setTimeout(() => {
+          if (onComplete) onComplete();
+        }, 500);
+      };
+
+      setTimeout(() => {
+        window.addEventListener('keydown', proceed);
+        modal.addEventListener('click', proceed);
+      }, 350);
+    },
+
+    // 完成節點，不強制跳關，轉為自由 RPG 操作指引！
+    completeCurrentNode(nodeId) {
+      GameState.quest.completedNodes.add(nodeId);
+      this.closeDialogue();
+
+      // Q1 完成 (Day 1 清晨自習)
+      if (nodeId === 'node1') {
+        GameState.quest.step = 2;
+        GameState.quest.activeNodeId = 'node2';
+        GameState.quest.text = 'Q1 完成！請走出教室右側木門，前往走廊查看飲水機附近情況。';
+        this.showToast('Q1 完成！請跟隨地面黃色箭頭，走出教室前往走廊。');
+        this.updateHUD();
+        this.updateQuestBanner();
+      }
+      // Q2 完成 (Day 1 第一節下課)
+      else if (nodeId === 'node2') {
+        GameState.quest.step = 3;
+        GameState.quest.activeNodeId = 'node3';
+        GameState.quest.text = '遭遇同儕威脅！請進入輔導室（S6）尋求導師協助。';
+        this.showToast('請跟隨黃色箭頭，進入中間木門（輔導室）。');
+        this.updateHUD();
+        this.updateQuestBanner();
+      }
+      // Q3 完成 (Day 1 放學 ➔ 進入 Day 2)
+      else if (nodeId === 'node3') {
+        this.showDayTransition({
+          badge: '第一天・放學',
+          title: '下課鐘聲響起，今天辛苦了。',
+          subtitle: '走出校門，回家好好休息。明天又是新的一天。',
+          playBell: true
+        }, () => {
+          this.showDayTransition({
+            badge: '第二天・清晨',
+            title: '第二天，早上',
+            subtitle: '晨光灑入校園，深吸一口氣，迎接新的一天。',
+            playBell: false
+          }, () => {
+            GameState.day = 2;
+            GameState.timeOfDay = '早上';
+            GameState.quest.step = 4;
+            GameState.quest.activeNodeId = 'node4';
+            GameState.quest.text = '第 2 天早上：請經由走廊前往穿堂大廳（S5）面對同儕閒話。';
+            this.changeScene('S4', { x: 900, y: 310, dir: 'right' });
+            this.updateHUD();
+            this.updateQuestBanner();
+          });
+        });
+      }
+      // Q4 完成 (Day 2 早上)
+      else if (nodeId === 'node4') {
+        GameState.quest.step = 5;
+        GameState.quest.activeNodeId = 'node5';
+        GameState.timeOfDay = '午休';
+        GameState.quest.text = '第 2 天午休：請走回走廊（S4），注意同學乙的行蹤。';
+        this.showToast('午休時間，請走回走廊。');
+        this.updateHUD();
+        this.updateQuestBanner();
+      }
+      // Q5 完成 (Day 2 放學 ➔ 進入 Day 3)
+      else if (nodeId === 'node5') {
+        this.showDayTransition({
+          badge: '第二天・放學',
+          title: '放學鐘聲迴盪，夕陽染紅了走廊。',
+          subtitle: '面對困境的勇氣正在累積，回家養足精神。',
+          playBell: true
+        }, () => {
+          this.showDayTransition({
+            badge: '第三天・白天',
+            title: '第三天，白天',
+            subtitle: '學校安排了親師三方會談，請前往學務處。',
+            playBell: false
+          }, () => {
+            GameState.day = 3;
+            GameState.timeOfDay = '白天';
+            GameState.quest.step = 6;
+            GameState.quest.activeNodeId = 'node6';
+            GameState.quest.text = '第 3 天：請進入走廊右側學務處（S7），參加三方家長會談。';
+            this.changeScene('S4', { x: 750, y: 310, dir: 'right' });
+            this.updateHUD();
+            this.updateQuestBanner();
+          });
+        });
+      }
+      // Q6~Q8 完成 (Day 3 三方會談結束 ➔ 進入 Day 4 回家臥室)
+      else if (nodeId === 'node6') {
+        this.showDayTransition({
+          badge: '第三天・傍晚',
+          title: '三方會談告一段落，校方與家長正式介入。',
+          subtitle: '收拾好書包，搭車回到溫暖的家中。',
+          playBell: true
+        }, () => {
+          this.showDayTransition({
+            badge: '第四天・傍晚',
+            title: '第四天，傍晚',
+            subtitle: '家：臥室。媽媽敲了敲房門，走進房間關心你……',
+            playBell: false
+          }, () => {
+            GameState.day = 4;
+            GameState.timeOfDay = '傍晚';
+            GameState.quest.step = 7;
+            GameState.quest.activeNodeId = 'node7';
+            GameState.quest.text = '第 4 天傍晚：在臥室床邊與媽媽坦誠溝通（Node 7）。';
+            this.changeScene('S8', { x: 300, y: 300, dir: 'left' });
+            this.updateHUD();
+            this.updateQuestBanner();
+          });
+        });
+      }
+      // Q9 完成 (Day 4 臥室媽媽談話 ➔ 前往客廳接電話)
+      else if (nodeId === 'node7') {
+        GameState.quest.step = 8;
+        GameState.quest.activeNodeId = 'node8';
+        GameState.timeOfDay = '晚上';
+        GameState.quest.text = '第 4 天晚上：走出臥室前往客廳，接聽導師的關心電話（Node 8）。';
+        this.showToast('媽媽給予了你堅定的支持！請走入客廳接聽導師電話。');
+        this.updateHUD();
+        this.updateQuestBanner();
+      }
+      // Q10 完成 (Day 4 客廳導師電話 ➔ 進入 Day 5 重返教室)
+      else if (nodeId === 'node8') {
+        this.showDayTransition({
+          badge: '第四天・夜深',
+          title: '夜深了，今晚安穩地睡個好覺。',
+          subtitle: '有了家人與老師的堅定後盾，你不再孤單。',
+          playBell: false
+        }, () => {
+          this.showDayTransition({
+            badge: '第五天・清晨',
+            title: '第五天，清晨',
+            subtitle: '破曉時分，帶著堅定的信心重返班級教室。',
+            playBell: false
+          }, () => {
+            GameState.day = 5;
+            GameState.timeOfDay = '清晨';
+            GameState.quest.step = 9;
+            GameState.quest.activeNodeId = 'node9';
+            GameState.quest.text = '第 5 天清晨：回到教室（S3），接受同學丙的支持與善意。';
+            this.changeScene('S3', { x: 700, y: 470, dir: 'left' });
+            this.updateHUD();
+            this.updateQuestBanner();
+          });
+        });
+      }
+      // Q11 完成 (Day 5 班級教室同學丙 ➔ 全劇本圓滿達成，邁向大結局)
+      else if (nodeId === 'node9') {
+        GameState.quest.step = 10;
+        GameState.quest.text = '全劇情圓滿達成！請走出校門口（S2），迎接陽光破曉大結局。';
+        this.showToast('感受到了同儕的溫暖！請走出校門口，邁向破曉結局！');
+        this.updateHUD();
+        this.updateQuestBanner();
+      }
+    },
+
+    closeDialogue() {
+      GameState.dialogue.active = false;
+      document.getElementById('dialogue-layer').classList.remove('active');
+    },
+
+    // ========================================================================
+    // 9. 壓力過載 (4-6 深呼吸減壓小遊戲)
+    // ========================================================================
+    triggerStressOverload() {
+      SoundFX.stressUp();
+      const bModal = document.getElementById('modal-breathing');
+      bModal.classList.add('active');
+
+      GameState.breathing.active = true;
+      GameState.breathing.cycle = 1;
+
+      const bubble = document.getElementById('breathing-bubble');
+      const statusText = document.getElementById('breathing-status');
+      const finishBtn = document.getElementById('btn-finish-breathing');
+      finishBtn.style.display = 'none';
+
+      const runCycle = () => {
+        if (GameState.breathing.cycle > 3) {
+          statusText.textContent = '心率已平復，你做得很好。';
+          bubble.textContent = '平靜';
+          bubble.className = 'breathing-circle-inner';
+          finishBtn.style.display = 'inline-block';
+          SoundFX.positive();
+          return;
+        }
+
+        bubble.textContent = '吸氣 4s';
+        bubble.className = 'breathing-circle-inner inhale';
+        statusText.textContent = `第 ${GameState.breathing.cycle} / 3 次呼吸：深深吸氣，感受胸腔放鬆...`;
+        SoundFX.breatheBell();
+
+        setTimeout(() => {
+          bubble.textContent = '吐氣 6s';
+          bubble.className = 'breathing-circle-inner exhale';
+          statusText.textContent = `第 ${GameState.breathing.cycle} / 3 次呼吸：緩緩吐氣，將不安與緊繃吐出...`;
+
+          setTimeout(() => {
+            GameState.breathing.cycle++;
+            runCycle();
+          }, 6000);
+        }, 4000);
+      };
+
+      runCycle();
+
+      finishBtn.onclick = () => {
+        SoundFX.click();
+        bModal.classList.remove('active');
+        GameState.breathing.active = false;
+
+        GameState.stats.stress = 60;
+        this.updateHUD();
+        this.showToast('身心狀態已調節，壓力重設至 60。請繼續你的旅程。');
+
+        const cur = GameState.dialogue.currentNodeData;
+        this.completeCurrentNode(cur ? cur.id : 'node1');
+      };
+    },
+
+    // ========================================================================
+    // 10. 五維心靈成長雷達圖與結算系統 (雙層正五角形對比、即時預覽不卡死、平滑重開)
+    // ========================================================================
+
+    // 預覽五維心靈成長雷達圖 (遊玩中隨時點擊 🏆 預覽，不卡死，可隨時返回遊戲)
+    openRadarModal() {
+      const s = GameState.stats;
+      const formula = (s.courage + s.safety + s.selfEsteem) - s.stress;
+
+      // 切換至結算/雷達圖面板
+      this.switchScreen('ending');
+
+      const isCompleted = GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10;
+
+      const badgeEl = document.getElementById('ending-badge');
+      if (badgeEl) {
+        if (isCompleted) {
+          badgeEl.textContent = `🏆 評估完成・陽光破曉 ｜ 綜合評價積分：${formula} ｜ 最終壓力值：${s.stress}`;
+        } else {
+          badgeEl.textContent = `📊 五維心理狀態檢視（旅程進行中・Day ${GameState.day}）｜ 當前壓力值：${s.stress}`;
+        }
+      }
+
+      const titleEl = document.getElementById('ending-title');
+      if (titleEl) {
+        titleEl.textContent = isCompleted ? '陽光破曉：走出陰霾' : '心靈羅盤：五維成長檢視';
+      }
+
+      const storyEl = document.getElementById('ending-story');
+      if (storyEl) {
+        storyEl.textContent = isCompleted
+          ? '你在面對同儕困境時展現了勇氣，尋求值得信任的師長支援，重獲安全感與人際信任。'
+          : `當前主線進度：${GameState.quest.text}。你可以隨時點擊下方「返回遊戲繼續旅程」回到校園中操作！`;
+      }
+
+      // 動態注入五維數值條到 #ending-stats-breakdown
+      this.populateStatsBreakdown(s);
+
+      // 繪製雙層五角形對比雷達圖 (初始淡色 vs 當前深色)
+      this.drawRadarChart(s);
+
+      // 雙重保證延遲渲染，確保 Canvas 在 CSS 顯現後必定繪出
+      requestAnimationFrame(() => this.drawRadarChart(s));
+      setTimeout(() => this.drawRadarChart(s), 60);
+    },
+
+    // 大結局結算 (走出校門或完成全部劇情時觸發)
+    evaluateEnding() {
+      SoundFX.stopTelephoneRing();
+      this.openRadarModal();
+      SoundFX.positive();
+    },
+
+    // 填充五維心理成長數值清單 (顯示初始值與增長幅度)
+    populateStatsBreakdown(s) {
+      const breakdownEl = document.getElementById('ending-stats-breakdown');
+      if (!breakdownEl) return;
+
+      const statsList = [
+        { name: '放鬆度（原壓力值）', val: 100 - s.stress, initial: 50, color: '#c0392b' },
+        { name: '同儕關係值', val: s.peer, initial: 30, color: '#8e44ad' },
+        { name: '勇氣值', val: s.courage, initial: 40, color: '#e67e22' },
+        { name: '安全感', val: s.safety, initial: 35, color: '#27ae60' },
+        { name: '自我肯定', val: s.selfEsteem, initial: 30, color: '#2980b9' }
+      ];
+
+      breakdownEl.innerHTML = statsList.map(item => {
+        const delta = item.val - item.initial;
+        const deltaText = delta >= 0 ? `+${delta}` : `${delta}`;
+        const deltaClass = delta >= 0 ? '#27ae60' : '#c0392b';
+        return `
+          <div class="breakdown-item" style="margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-weight:600; color:#4a382e; font-size:13.5px;">
+              <span>${item.name}</span>
+              <span>
+                <strong>${Math.min(100, Math.max(0, item.val))}</strong> / 100
+                <small style="color:${deltaClass}; font-weight:700; margin-left:6px;">(${deltaText})</small>
+              </span>
+            </div>
+            <div style="height:10px; background:#e8dfd2; border-radius:5px; overflow:hidden;">
+              <div style="width:${Math.min(100, Math.max(0, item.val))}%; height:100%; background:${item.color}; border-radius:5px; transition:width 0.8s ease;"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    },
+
+    // 繪製五維心靈成長數值雷達圖 (正五角形雙層對比：初始淺色 vs 結束深色)
+    drawRadarChart(stats) {
+      const canvas = document.getElementById('ending-radar-chart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // 中心與最大半徑
+      const cx = w / 2;
+      const cy = h / 2 + 10; // 稍微下移，留頂部給圖例
+      const R = 96;
+
+      // 五維數值規格（正五角形分佈，順時針：放鬆度、安全感、自我肯定、同儕關係值、勇氣值）
+      const initialAxes = [
+        { name: '放鬆度（原壓力值）', val: 50 },
+        { name: '安全感', val: 35 },
+        { name: '自我肯定', val: 30 },
+        { name: '同儕關係值', val: 30 },
+        { name: '勇氣值', val: 40 }
+      ];
+
+      const currentAxes = [
+        { name: '放鬆度（原壓力值）', val: Math.min(100, Math.max(0, stats ? (100 - stats.stress) : 50)) },
+        { name: '安全感', val: Math.min(100, Math.max(0, stats ? stats.safety : 35)) },
+        { name: '自我肯定', val: Math.min(100, Math.max(0, stats ? stats.selfEsteem : 30)) },
+        { name: '同儕關係值', val: Math.min(100, Math.max(0, stats ? stats.peer : 30)) },
+        { name: '勇氣值', val: Math.min(100, Math.max(0, stats ? stats.courage : 40)) }
+      ];
+
+      const totalAxes = 5;
+      const getAngle = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / totalAxes;
+
+      // --- A. 頂部圖例 (Legend) ---
+      ctx.save();
+      ctx.font = 'bold 12px "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+
+      // 1. 初始狀態圖例 (淺青藍色)
+      ctx.fillStyle = 'rgba(120, 160, 200, 0.45)';
+      ctx.fillRect(cx - 150, 14, 14, 10);
+      ctx.strokeStyle = '#5a8cb8';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(cx - 150, 14, 14, 10);
+      ctx.fillStyle = '#6b7280';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('初始基準 (淺色)', cx - 130, 20);
+
+      // 2. 蛻變後狀態圖例 (深金橘色)
+      ctx.fillStyle = 'rgba(235, 140, 35, 0.65)';
+      ctx.fillRect(cx + 25, 14, 14, 10);
+      ctx.strokeStyle = '#d35400';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cx + 25, 14, 14, 10);
+      ctx.fillStyle = '#b45309';
+      ctx.fillText('蛻變成長 (深色)', cx + 45, 20);
+      ctx.restore();
+
+      // --- B. 繪製 4 層同心正五角形格線網格 (25%, 50%, 75%, 100%) ---
+      const levels = [0.25, 0.50, 0.75, 1.0];
+      levels.forEach((lvl, idx) => {
+        ctx.beginPath();
+        for (let i = 0; i < totalAxes; i++) {
+          const angle = getAngle(i);
+          const x = cx + Math.cos(angle) * (R * lvl);
+          const y = cy + Math.sin(angle) * (R * lvl);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+
+        const isOuter = (idx === levels.length - 1);
+        ctx.strokeStyle = isOuter ? 'rgba(160, 120, 80, 0.75)' : 'rgba(215, 190, 160, 0.45)';
+        ctx.lineWidth = isOuter ? 2.0 : 1.0;
+        ctx.stroke();
+
+        if (idx === 0) {
+          ctx.fillStyle = 'rgba(253, 248, 240, 0.6)';
+          ctx.fill();
+        }
+      });
+
+      // --- C. 繪製 5 條軸線 ---
+      for (let i = 0; i < totalAxes; i++) {
+        const angle = getAngle(i);
+        const x = cx + Math.cos(angle) * R;
+        const y = cy + Math.sin(angle) * R;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(x, y);
+        ctx.strokeStyle = 'rgba(195, 160, 125, 0.55)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+
+      // --- D. 繪製軸向頂點標籤與當前數值 ---
+      ctx.save();
+      ctx.font = 'bold 12.5px "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+      ctx.fillStyle = '#4a382e';
+      for (let i = 0; i < totalAxes; i++) {
+        const angle = getAngle(i);
+        const labelDist = R + 22;
+        const lx = cx + Math.cos(angle) * labelDist;
+        const ly = cy + Math.sin(angle) * labelDist;
+
+        if (i === 0) {
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+        } else if (i === 1) {
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+        } else if (i === 2) {
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+        } else if (i === 3) {
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+        } else {
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+        }
+
+        ctx.fillText(`${currentAxes[i].name} ${currentAxes[i].val}`, lx, ly);
+      }
+      ctx.restore();
+
+      // --- E. 繪製第一層：初始五維數值多邊形 (淺色淡藍層) ---
+      ctx.save();
+      ctx.beginPath();
+      const initPoints = [];
+      for (let i = 0; i < totalAxes; i++) {
+        const angle = getAngle(i);
+        const r = Math.max(8, R * (initialAxes[i].val / 100));
+        const px = cx + Math.cos(angle) * r;
+        const py = cy + Math.sin(angle) * r;
+        initPoints.push({ x: px, y: py });
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+
+      // 淡藍色半透明填充
+      ctx.fillStyle = 'rgba(140, 185, 225, 0.35)';
+      ctx.fill();
+
+      // 淡藍色細實線邊框
+      ctx.strokeStyle = '#5a8cb8';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      // 初始多邊形端點小圓
+      initPoints.forEach(pt => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = '#5a8cb8';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+      ctx.restore();
+
+      // --- F. 繪製第二層：當前/蛻變後五維數值多邊形 (深色飽和金橘層) ---
+      ctx.save();
+      ctx.beginPath();
+      const currPoints = [];
+      for (let i = 0; i < totalAxes; i++) {
+        const angle = getAngle(i);
+        const r = Math.max(8, R * (currentAxes[i].val / 100));
+        const px = cx + Math.cos(angle) * r;
+        const py = cy + Math.sin(angle) * r;
+        currPoints.push({ x: px, y: py });
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+
+      // 溫暖金色徑向漸層填充 (深色)
+      const gradient = ctx.createRadialGradient(cx, cy, 10, cx, cy, R);
+      gradient.addColorStop(0, 'rgba(245, 175, 45, 0.70)');
+      gradient.addColorStop(1, 'rgba(220, 120, 25, 0.45)');
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // 深色加粗邊框
+      ctx.strokeStyle = '#d35400';
+      ctx.lineWidth = 2.8;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      // 深色多邊形雙層立體端點
+      currPoints.forEach(pt => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = '#d35400';
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+      });
+      ctx.restore();
+    },
+
+    showToast(msg) {
+      let toast = document.getElementById('game-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'game-toast';
+        toast.style.cssText = `
+          position: absolute;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(45, 36, 28, 0.94);
+          color: #fff;
+          padding: 8px 18px;
+          border-radius: 20px;
+          font-size: 14px;
+          letter-spacing: 0.5px;
+          z-index: 150;
+          pointer-events: none;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+          transition: opacity 0.4s ease;
+        `;
+        document.getElementById('game-wrapper').appendChild(toast);
+      }
+      toast.textContent = msg;
+      toast.style.opacity = '1';
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => {
+        toast.style.opacity = '0';
+      }, 3500);
+    }
+  };
+
+  window.addEventListener('DOMContentLoaded', () => {
+    Game.init();
+  });
+
+})();
