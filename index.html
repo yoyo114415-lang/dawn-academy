@@ -6,6 +6,9 @@
   <title>破曉學園 ｜ 校園人際與情緒覺察互動探索遊戲</title>
   <meta name="description" content="教育部防制校園霸凌教育互動探索遊戲，透過受凌者主線視角，引導情緒覺察、自我賦權與求助路徑。">
   <!-- 純淨無外連安全防護：無第三方追蹤器、無廣告代碼、零個資外洩 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:;">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -199,7 +202,16 @@
 
         <!-- 對話框本體 -->
         <div class="dialogue-box">
-          <div id="speaker-name" class="speaker-tag">同學甲</div>
+          <div class="dialogue-header-bar">
+            <div id="speaker-name" class="speaker-tag">同學甲</div>
+          </div>
+
+          <!-- 前情對話滾動回顧區（抉擇時刻顯示，可自由滾動查看） -->
+          <div id="dialogue-history-container" class="dialogue-history-container" style="display: none;">
+            <div class="dialogue-history-header">📜 前情對話回顧（可滑動查看完整情境）：</div>
+            <div id="dialogue-history-list" class="dialogue-history-list"></div>
+          </div>
+
           <div id="dialogue-content" class="dialogue-text">清晨的校園還有點昏暗。你走進教室，發現座位上有一張嘲笑你的紙條。</div>
           <div id="dialogue-prompt" class="dialogue-continue-prompt">點擊或按空白鍵繼續 ▼</div>
 

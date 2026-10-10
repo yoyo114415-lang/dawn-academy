@@ -60,7 +60,8 @@
       isTyping: false,
       waitingChoice: false,
       currentNodeData: null,
-      inSubQuestion: false
+      inSubQuestion: false,
+      history: []              // 前情對話回顧歷史紀錄
     },
 
     // 減壓深呼吸小遊戲狀態
@@ -565,14 +566,15 @@
       ctx.restore();
     },
 
-    // 繪製差異化 NPC 與路人學生 (支援目標淺黃色光暈圍繞與步伐動畫)
-    drawNPC(ctx, x, y, role, isTarget = false, direction = 'down', frame = 0) {
+    // 繪製差異化 NPC 與路人學生 (支援劇本角色頭頂姓名標籤、目標呼吸光暈與步伐動畫)
+    drawNPC(ctx, x, y, role, isTarget = false, direction = 'down', frame = 0, nameTag = '') {
       ctx.save();
       ctx.translate(x, y);
 
+      const pulse = (Math.sin(Date.now() / 380) + 1) * 0.5;
+
       // 若為當前任務對話目標，腳底與身周亮起醒目的淺黃色呼吸光暈
       if (isTarget) {
-        const pulse = (Math.sin(Date.now() / 380) + 1) * 0.5;
         ctx.beginPath();
         ctx.ellipse(0, 2, 22 + pulse * 6, 9 + pulse * 3, 0, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(248, 210, 85, ${0.35 + pulse * 0.25})`;
@@ -583,12 +585,6 @@
         ctx.strokeStyle = 'rgba(235, 175, 45, 0.9)';
         ctx.lineWidth = 2;
         ctx.stroke();
-
-        // 頭頂金色驚嘆號微標記
-        ctx.fillStyle = '#e8a530';
-        ctx.font = 'bold 15px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('！', 0, -42 - pulse * 3);
       }
 
       // 腳底微陰影
@@ -598,6 +594,68 @@
       ctx.fill();
 
       const bodyY = -22;
+
+      // 角色頭頂姓名標籤 (清楚標註劇本人物，讓玩家一眼辨識目標)
+      const defaultRoleNames = {
+        'counselor': '輔導老師',
+        'discipline_master': '生教組長',
+        'mother': '媽媽',
+        'guard': '警衛叔叔',
+        'classmate_a': '同學甲',
+        'classmate_b': '同學乙',
+        'classmate_c': '同學丙',
+        'classmate_b_dad': '同學乙爸爸'
+      };
+      const finalName = (nameTag !== undefined && nameTag !== null && nameTag !== '')
+        ? nameTag
+        : (defaultRoleNames[role] || '');
+
+      if (finalName) {
+        ctx.save();
+        ctx.font = 'bold 11px "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+        const tagText = finalName;
+        const tagMetrics = ctx.measureText(tagText);
+        const tagW = Math.max(38, tagMetrics.width + 12);
+        const tagH = 17;
+        const tagY = isTarget ? (bodyY - 26 - pulse * 2) : (bodyY - 24);
+
+        // 圓角膠囊底色
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(-tagW / 2, tagY, tagW, tagH, 8);
+        } else {
+          ctx.rect(-tagW / 2, tagY, tagW, tagH);
+        }
+
+        if (isTarget) {
+          const pulseAlpha = 0.88 + pulse * 0.12;
+          ctx.fillStyle = `rgba(228, 135, 22, ${pulseAlpha})`;
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+
+          // 目標頭頂金黃色驚嘆號標記
+          ctx.fillStyle = '#f7b828';
+          ctx.font = 'bold 13px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('！', 0, tagY - 6 - pulse * 2);
+        } else {
+          ctx.fillStyle = 'rgba(38, 30, 24, 0.82)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // 姓名文字
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(tagText, 0, tagY + tagH / 2 + 0.5);
+        ctx.restore();
+      }
 
       // 1. 輔導老師 (米色針織開襟衫、長裙、知性金屬眼鏡、束髮)
       if (role === 'counselor') {
@@ -703,6 +761,45 @@
 
         // 短灰黑髮
         ctx.fillStyle = '#33383e';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
+        ctx.lineTo(8, bodyY - 11);
+        ctx.lineTo(-8, bodyY - 11);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 2.5 同學乙爸爸 / 家長 (深棕西裝夾克、淺藍襯衫、深灰長褲、俐落短髮)
+      else if (role === 'classmate_b_dad' || role === 'parent_b') {
+        ctx.fillStyle = '#34383d'; // 深灰長褲
+        ctx.fillRect(-8, bodyY + 12, 5, 10);
+        ctx.fillRect(3, bodyY + 12, 5, 10);
+
+        ctx.fillStyle = '#594436'; // 深棕西裝夾克
+        ctx.fillRect(-11, bodyY, 22, 13);
+        ctx.fillStyle = '#c5d9ec'; // 淺藍襯衫
+        ctx.beginPath();
+        ctx.moveTo(-4, bodyY);
+        ctx.lineTo(0, bodyY + 6);
+        ctx.lineTo(4, bodyY);
+        ctx.closePath();
+        ctx.fill();
+
+        // 臉部
+        ctx.fillStyle = '#fae2ce';
+        ctx.beginPath();
+        ctx.arc(0, bodyY - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 雙眼與眉毛
+        ctx.fillStyle = '#221e1a';
+        ctx.beginPath();
+        ctx.arc(-3.5, bodyY - 9.5, 1.4, 0, Math.PI * 2);
+        ctx.arc(3.5, bodyY - 9.5, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 深棕黑短髮
+        ctx.fillStyle = '#2c221b';
         ctx.beginPath();
         ctx.arc(0, bodyY - 12, 11, Math.PI, 0);
         ctx.lineTo(8, bodyY - 11);
@@ -1001,7 +1098,7 @@
         dialogue: '「同學正忙著整理書包：『我的筆記本借隔壁班看，還沒拿回來呢。』」'
       },
 
-      // S4 走廊路人 (長走廊漫步)
+      // S4 走廊路人 (長走廊漫步與聊天同學群)
       {
         id: 'ambient_s4_1',
         sceneId: 'S4',
@@ -1034,8 +1131,56 @@
         prompt: '按 [E] 與同學交談',
         dialogue: '「走廊窗外的微風吹得很舒服：『站在這裡吹吹風最放鬆了。』」'
       },
+      {
+        id: 'ambient_s4_3',
+        sceneId: 'S4',
+        role: 'ambient_girl',
+        x: 420,
+        y: 315,
+        minX: 360, maxX: 640, minY: 295, maxY: 335,
+        speed: 26,
+        dir: 'right',
+        state: 'idle',
+        timer: 2.8,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學抱著美術作業：『希望等一下的點名大家都平平安安的。』」'
+      },
+      {
+        id: 'ambient_s4_4',
+        sceneId: 'S4',
+        role: 'ambient_boy',
+        x: 620,
+        y: 305,
+        minX: 480, maxX: 780, minY: 290, maxY: 340,
+        speed: 28,
+        dir: 'left',
+        state: 'walk',
+        timer: 3.6,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學正要回教室：『你還好嗎？如果有需要，隨時可以跟班長說喔。』」'
+      },
+      {
+        id: 'ambient_s4_5',
+        sceneId: 'S4',
+        role: 'ambient_girl',
+        x: 820,
+        y: 320,
+        minX: 750, maxX: 980, minY: 295, maxY: 335,
+        speed: 24,
+        dir: 'right',
+        state: 'idle',
+        timer: 3.0,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學靠在欄杆旁：『看著操場綠油油的草皮，心情好很多呢。』」'
+      },
 
-      // S5 穿堂路人 (大廳寬敞穿梭)
+      // S5 穿堂路人 (大廳寬敞穿梭與聚集同學)
       {
         id: 'ambient_s5_1',
         role: 'ambient_boy',
@@ -1068,8 +1213,56 @@
         prompt: '按 [E] 與同學交談',
         dialogue: '「同學向你揮揮手：『早安！今天的天氣真好。』」'
       },
+      {
+        id: 'ambient_s5_3',
+        role: 'ambient_girl',
+        sceneId: 'S5',
+        x: 290,
+        y: 220,
+        minX: 160, maxX: 420, minY: 180, maxY: 350,
+        speed: 26,
+        dir: 'down',
+        state: 'walk',
+        timer: 3.5,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學端詳著榮譽榜：『學校每個月都有推廣友善校園活動耶。』」'
+      },
+      {
+        id: 'ambient_s5_4',
+        role: 'ambient_boy',
+        sceneId: 'S5',
+        x: 430,
+        y: 390,
+        minX: 250, maxX: 550, minY: 280, maxY: 450,
+        speed: 32,
+        dir: 'up',
+        state: 'walk',
+        timer: 3.2,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學背著運動水壺：『下課走動一下，整個人都有精神了！』」'
+      },
+      {
+        id: 'ambient_s5_5',
+        role: 'ambient_boy',
+        sceneId: 'S5',
+        x: 350,
+        y: 260,
+        minX: 220, maxX: 500, minY: 200, maxY: 380,
+        speed: 22,
+        dir: 'right',
+        state: 'idle',
+        timer: 2.8,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學微笑問候：『嗨！今天要一起加油喔。』」'
+      },
 
-      // S1 校園主地圖路人 (操場與走道漫步)
+      // S1 校園主地圖路人 (操場奔跑、散步與運動群)
       {
         id: 'ambient_s1_1',
         role: 'ambient_girl',
@@ -1101,6 +1294,70 @@
         animTimer: 0,
         prompt: '按 [E] 與散步同學交談',
         dialogue: '「同學抱著籃球走過：『下課一起去投籃吧！運動最抒壓了。』」'
+      },
+      {
+        id: 'ambient_s1_3',
+        role: 'ambient_boy',
+        sceneId: 'S1',
+        x: 380,
+        y: 620,
+        minX: 240, maxX: 650, minY: 520, maxY: 780,
+        speed: 42,
+        dir: 'down',
+        state: 'walk',
+        timer: 4.5,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與慢跑同學交談',
+        dialogue: '「同學正沿著操場慢跑：『一、二、一、二！慢跑流汗能把煩惱都甩掉！』」'
+      },
+      {
+        id: 'ambient_s1_4',
+        role: 'ambient_girl',
+        sceneId: 'S1',
+        x: 880,
+        y: 720,
+        minX: 650, maxX: 1050, minY: 600, maxY: 860,
+        speed: 28,
+        dir: 'up',
+        state: 'walk',
+        timer: 3.8,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與散步同學交談',
+        dialogue: '「同學蹲在花圃旁看蝴蝶：『你看，校園裡的花開得好漂亮。』」'
+      },
+      {
+        id: 'ambient_s1_5',
+        role: 'ambient_boy',
+        sceneId: 'S1',
+        x: 580,
+        y: 760,
+        minX: 420, maxX: 820, minY: 680, maxY: 890,
+        speed: 30,
+        dir: 'right',
+        state: 'idle',
+        timer: 2.5,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學仰望大榕樹：『大樹下的陰涼處最適合下課聊天了。』」'
+      },
+      {
+        id: 'ambient_s1_6',
+        role: 'ambient_girl',
+        sceneId: 'S1',
+        x: 640,
+        y: 340,
+        minX: 450, maxX: 850, minY: 280, maxY: 420,
+        speed: 26,
+        dir: 'left',
+        state: 'walk',
+        timer: 3.2,
+        frame: 0,
+        animTimer: 0,
+        prompt: '按 [E] 與同學交談',
+        dialogue: '「同學走向司令台：『聽說校長在週會常說：每個人都值得被溫柔對待。』」'
       }
     ],
 
@@ -2817,56 +3074,91 @@
       const q = GameState.quest;
 
       if (sId === 'S3') {
-        // 同學丙 (Day 5 是支持主角的對話目標，其餘時間坐在座位)
+        // 同學丙 (Day 5 是支持主角的對話目標，其餘時間坐在座位認真自習)
         const isTargetC = (q.step === 9 && !q.completedNodes.has('node9'));
-        CharacterSpriteRenderer.drawNPC(ctx, 210, 345, 'classmate_c', isTargetC, 'down');
+        CharacterSpriteRenderer.drawNPC(ctx, 210, 345, 'classmate_c', isTargetC, 'down', 0, '同學丙');
 
-        // 同學甲 (前段時間出現在教室)
+        // 同學甲 (自習課前段時間出現在教室)
         if (!q.completedNodes.has('node1')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 345, 320, 'classmate_a', false, 'left');
+          CharacterSpriteRenderer.drawNPC(ctx, 345, 320, 'classmate_a', false, 'left', 0, '同學甲');
         }
       }
       else if (sId === 'S4') {
         // Node 2 (飲水機攔截事件)：同學甲與同學乙圍住飲水機
         if (q.step === 2 && !q.completedNodes.has('node2')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 505, 310, 'classmate_a', true, 'right');
-          CharacterSpriteRenderer.drawNPC(ctx, 535, 310, 'classmate_b', false, 'left');
+          CharacterSpriteRenderer.drawNPC(ctx, 505, 310, 'classmate_a', true, 'right', 0, '同學甲');
+          CharacterSpriteRenderer.drawNPC(ctx, 535, 310, 'classmate_b', false, 'left', 0, '同學乙');
         }
         // Node 5 (午休走廊遭遇)：同學乙
         else if (q.step === 5 && !q.completedNodes.has('node5')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 320, 310, 'classmate_b', true, 'down');
+          CharacterSpriteRenderer.drawNPC(ctx, 320, 310, 'classmate_b', true, 'down', 0, '同學乙');
         }
       }
       else if (sId === 'S5') {
-        // Node 4 (同儕閒話事件)
+        // Node 4 (同儕閒話事件)：穿堂同學甲與同學乙
         if (q.step === 4 && !q.completedNodes.has('node4')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 370, 310, 'classmate_a', true, 'right');
-          CharacterSpriteRenderer.drawNPC(ctx, 400, 310, 'classmate_b', true, 'left');
+          CharacterSpriteRenderer.drawNPC(ctx, 370, 310, 'classmate_a', true, 'right', 0, '同學甲');
+          CharacterSpriteRenderer.drawNPC(ctx, 400, 310, 'classmate_b', true, 'left', 0, '同學乙');
         }
       }
       else if (sId === 'S6') {
         // 輔導室：輔導老師長駐
         const isTargetCounselor = (q.step === 3 && !q.completedNodes.has('node3'));
-        CharacterSpriteRenderer.drawNPC(ctx, 380, 240, 'counselor', isTargetCounselor, 'down');
+        CharacterSpriteRenderer.drawNPC(ctx, 380, 240, 'counselor', isTargetCounselor, 'down', 0, '輔導老師');
       }
       else if (sId === 'S7') {
-        // 學務處：學務主任長駐
+        // 學務處三方會談 (長桌 x:190~510, y:190~340)：生教組長、家長、學生分別坐在會議桌座椅上
         const isTargetDiscipline = (q.step === 6 && !q.completedNodes.has('node6'));
-        CharacterSpriteRenderer.drawNPC(ctx, 350, 160, 'discipline_master', isTargetDiscipline, 'down');
 
-        // 三方會談期間：媽媽陪同出席
+        // 1. 北側主席椅 (長桌正上方主位)：生教組長長駐主持
+        CharacterSpriteRenderer.drawNPC(ctx, 350, 165, 'discipline_master', false, 'down', 0, '生教組長');
+
+        // 2. 三方會談期間 (Node 6)：雙方家長與學生皆坐在會議桌座椅，呈現嚴肅真實的面對面三方會談！
         if (isTargetDiscipline) {
-          CharacterSpriteRenderer.drawNPC(ctx, 160, 260, 'mother', false, 'right');
+          // 西側家長席 (左邊座椅)：主角媽媽面對會議桌
+          CharacterSpriteRenderer.drawNPC(ctx, 165, 260, 'mother', false, 'right', 0, '媽媽');
+
+          // 東側對立席 (右邊座椅)：同學乙爸爸與同學乙依序入座
+          CharacterSpriteRenderer.drawNPC(ctx, 535, 235, 'classmate_b_dad', false, 'left', 0, '同學乙爸爸');
+          CharacterSpriteRenderer.drawNPC(ctx, 535, 295, 'classmate_b', false, 'left', 0, '同學乙');
+
+          // 南側主角座位引導：繪製座椅輪廓與入座標籤
+          ctx.save();
+          const chairPulse = (Math.sin(Date.now() / 320) + 1) * 0.5;
+
+          // 木質會議椅
+          ctx.fillStyle = 'rgba(50, 36, 26, 0.3)';
+          ctx.beginPath();
+          ctx.ellipse(350, 370, 16, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#6e5138';
+          ctx.fillRect(341, 356, 18, 12);
+          ctx.fillStyle = '#9e7955';
+          ctx.fillRect(339, 350, 22, 6);
+
+          // 座位金黃色光圈與入座標記
+          ctx.beginPath();
+          ctx.ellipse(350, 365, 22 + chairPulse * 4, 9 + chairPulse * 2, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(235, 160, 30, ${0.7 + chairPulse * 0.3})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.font = 'bold 11px sans-serif';
+          ctx.fillStyle = '#e8a530';
+          ctx.textAlign = 'center';
+          ctx.fillText('【你的座位】', 350, 340 - chairPulse * 3);
+          ctx.restore();
         }
       }
       else if (sId === 'S2') {
-        // 校門口：警衛叔叔
-        CharacterSpriteRenderer.drawNPC(ctx, 500, 220, 'guard', false, 'down');
+        // 校門口：警衛叔叔長駐
+        CharacterSpriteRenderer.drawNPC(ctx, 500, 220, 'guard', false, 'down', 0, '警衛叔叔');
       }
       else if (sId === 'S8') {
         // 臥室：第 4 天媽媽談話 (床邊 320, 270)
         if (q.step === 7 && !q.completedNodes.has('node7')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 320, 270, 'mother', true, 'left');
+          CharacterSpriteRenderer.drawNPC(ctx, 320, 270, 'mother', true, 'left', 0, '媽媽');
         }
       }
       else if (sId === 'S9') {
@@ -2938,6 +3230,7 @@
 
       GameState.dialogue.currentNodeData = node;
       GameState.dialogue.inSubQuestion = false;
+      GameState.dialogue.history = [];
 
       const lines = [];
       if (node.intro && node.intro.length) {
@@ -2964,6 +3257,8 @@
       document.getElementById('choices-container').style.display = 'none';
       document.getElementById('feedback-card').style.display = 'none';
       document.getElementById('dialogue-prompt').style.display = 'block';
+      const histContainer = document.getElementById('dialogue-history-container');
+      if (histContainer) histContainer.style.display = 'none';
 
       this.advanceDialogue();
     },
@@ -2996,6 +3291,14 @@
 
     displayLine(line) {
       const d = GameState.dialogue;
+      if (line && line.text && !line.isTip) {
+        if (!Array.isArray(d.history)) d.history = [];
+        d.history.push({
+          speaker: line.speaker || '你',
+          text: line.text
+        });
+      }
+
       const speakerEl = document.getElementById('speaker-name');
       speakerEl.textContent = line.speaker || '你';
 
@@ -3056,11 +3359,37 @@
       d.waitingChoice = true;
       document.getElementById('dialogue-prompt').style.display = 'none';
 
+      // 呈現前情對話滾動回顧（讓玩家能在作答前隨時回顧情境）
+      const histContainer = document.getElementById('dialogue-history-container');
+      const histList = document.getElementById('dialogue-history-list');
+      if (histContainer && histList) {
+        if (d.history && d.history.length > 0) {
+          histList.textContent = '';
+          d.history.forEach(item => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'history-item';
+            const spkSpan = document.createElement('span');
+            spkSpan.className = 'history-item-speaker';
+            spkSpan.textContent = (item.speaker || '對話') + '：';
+            const txtSpan = document.createElement('span');
+            txtSpan.className = 'history-item-text';
+            txtSpan.textContent = item.text || '';
+            itemDiv.appendChild(spkSpan);
+            itemDiv.appendChild(txtSpan);
+            histList.appendChild(itemDiv);
+          });
+          histContainer.style.display = 'block';
+          histList.scrollTop = histList.scrollHeight;
+        } else {
+          histContainer.style.display = 'none';
+        }
+      }
+
       document.getElementById('speaker-name').textContent = '抉擇時刻';
       document.getElementById('dialogue-content').textContent = qData.prompt || '這時候，你會怎麼做？';
 
       const container = document.getElementById('choices-container');
-      container.innerHTML = '';
+      container.textContent = '';
       container.style.display = 'flex';
 
       const optionsList = qData.choices || qData.options || [];
@@ -3069,7 +3398,17 @@
         const btn = document.createElement('button');
         btn.className = 'choice-btn';
         const letterKey = opt.letter || opt.key || String.fromCharCode(65 + idx);
-        btn.innerHTML = `<span class="choice-key">${letterKey}</span> <span>${opt.text}</span>`;
+        
+        const keySpan = document.createElement('span');
+        keySpan.className = 'choice-key';
+        keySpan.textContent = letterKey;
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = opt.text;
+
+        btn.appendChild(keySpan);
+        btn.appendChild(textSpan);
+
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.handleOptionChosen(opt);
@@ -3091,6 +3430,9 @@
       const d = GameState.dialogue;
       d.waitingChoice = false;
       document.getElementById('choices-container').style.display = 'none';
+
+      const histContainer = document.getElementById('dialogue-history-container');
+      if (histContainer) histContainer.style.display = 'none';
 
       // 1. 數值變更結算
       const eff = option.effects || { stress: 0, peer: 0, courage: 0, safety: 0, selfEsteem: 0 };
@@ -3352,6 +3694,8 @@
     closeDialogue() {
       GameState.dialogue.active = false;
       document.getElementById('dialogue-layer').classList.remove('active');
+      const histContainer = document.getElementById('dialogue-history-container');
+      if (histContainer) histContainer.style.display = 'none';
     },
 
     // ========================================================================
@@ -3479,25 +3823,65 @@
         { name: '自我肯定', val: s.selfEsteem, initial: 30, color: '#2980b9' }
       ];
 
-      breakdownEl.innerHTML = statsList.map(item => {
+      breakdownEl.textContent = '';
+      statsList.forEach(item => {
         const delta = item.val - item.initial;
         const deltaText = delta >= 0 ? `+${delta}` : `${delta}`;
-        const deltaClass = delta >= 0 ? '#27ae60' : '#c0392b';
-        return `
-          <div class="breakdown-item" style="margin-bottom:12px;">
-            <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-weight:600; color:#4a382e; font-size:13.5px;">
-              <span>${item.name}</span>
-              <span>
-                <strong>${Math.min(100, Math.max(0, item.val))}</strong> / 100
-                <small style="color:${deltaClass}; font-weight:700; margin-left:6px;">(${deltaText})</small>
-              </span>
-            </div>
-            <div style="height:10px; background:#e8dfd2; border-radius:5px; overflow:hidden;">
-              <div style="width:${Math.min(100, Math.max(0, item.val))}%; height:100%; background:${item.color}; border-radius:5px; transition:width 0.8s ease;"></div>
-            </div>
-          </div>
-        `;
-      }).join('');
+        const deltaColor = delta >= 0 ? '#27ae60' : '#c0392b';
+        const currentVal = Math.min(100, Math.max(0, item.val));
+
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'breakdown-item';
+        itemDiv.style.marginBottom = '12px';
+
+        const rowDiv = document.createElement('div');
+        rowDiv.style.display = 'flex';
+        rowDiv.style.justifyContent = 'space-between';
+        rowDiv.style.marginBottom = '4px';
+        rowDiv.style.fontWeight = '600';
+        rowDiv.style.color = '#4a382e';
+        rowDiv.style.fontSize = '13.5px';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = item.name;
+
+        const valSpan = document.createElement('span');
+        const strong = document.createElement('strong');
+        strong.textContent = currentVal;
+        const baseTxt = document.createTextNode(' / 100 ');
+        const small = document.createElement('small');
+        small.style.color = deltaColor;
+        small.style.fontWeight = '700';
+        small.style.marginLeft = '6px';
+        small.textContent = `(${deltaText})`;
+
+        valSpan.appendChild(strong);
+        valSpan.appendChild(baseTxt);
+        valSpan.appendChild(small);
+
+        rowDiv.appendChild(nameSpan);
+        rowDiv.appendChild(valSpan);
+
+        const barBg = document.createElement('div');
+        barBg.style.height = '10px';
+        barBg.style.background = '#e8dfd2';
+        barBg.style.borderRadius = '5px';
+        barBg.style.overflow = 'hidden';
+
+        const barFill = document.createElement('div');
+        barFill.style.width = `${currentVal}%`;
+        barFill.style.height = '100%';
+        barFill.style.background = item.color;
+        barFill.style.borderRadius = '5px';
+        barFill.style.transition = 'width 0.8s ease';
+
+        barBg.appendChild(barFill);
+
+        itemDiv.appendChild(rowDiv);
+        itemDiv.appendChild(barBg);
+
+        breakdownEl.appendChild(itemDiv);
+      });
     },
 
     // 繪製五維心靈成長數值雷達圖 (正五角形雙層對比：初始淺色 vs 結束深色)
