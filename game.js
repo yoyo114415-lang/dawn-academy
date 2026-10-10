@@ -24,6 +24,17 @@
       selfEsteem: 30           // 自我肯定值
     },
 
+    // 玩家在各題的選擇記錄 (支援條件分支，如 Q1: 'B')
+    playerChoices: {},
+
+    // 依據規格書 7.2 公式計算「整體狀態值」：[(100 - 壓力) + 同儕 + 勇氣 + 安全感 + 自尊] ÷ 5
+    getOverallScore() {
+      const s = this.stats;
+      const relaxed = 100 - s.stress;
+      const total = relaxed + s.peer + s.courage + s.safety + s.selfEsteem;
+      return Math.round((total / 5) * 10) / 10;
+    },
+
     // 任務與劇情進度引擎
     quest: {
       step: 1,                 // 當前主線步驟 (1~9)
@@ -617,7 +628,8 @@
         const tagMetrics = ctx.measureText(tagText);
         const tagW = Math.max(38, tagMetrics.width + 12);
         const tagH = 17;
-        const tagY = isTarget ? (bodyY - 26 - pulse * 2) : (bodyY - 24);
+        // 將姓名標籤大幅上移懸浮於頭頂上方，絕不遮掩任何五官與頭髮
+        const tagY = isTarget ? (bodyY - 42 - pulse * 2) : (bodyY - 38);
 
         // 圓角膠囊底色
         ctx.beginPath();
@@ -1451,31 +1463,63 @@
   };
 
   // ==========================================================================
-  // 4.6 天色光影、環境氛圍與心理狀態濾鏡 (依據 GDD 7.2 與五維數值動態渲染)
+  // 4.6 天色光影、環境氛圍與心理狀態濾鏡 (依據 GDD 7.2 與五維整體狀態值動態演變)
   // ==========================================================================
   const AtmosphereRenderer = {
     particles: [],
+    currentScore: 37, // 遊戲開場初始整體狀態值 37 (落在灰藍黎明前)
+    targetScore: 37,
 
     init() {
       this.particles = [];
-      for (let i = 0; i < 24; i++) {
+      for (let i = 0; i < 36; i++) {
         this.particles.push({
           x: Math.random() * 1280,
           y: Math.random() * 960,
-          vx: (Math.random() - 0.5) * 8,
-          vy: -8 - Math.random() * 12,
-          radius: 1.2 + Math.random() * 2.0,
-          alpha: 0.2 + Math.random() * 0.4
+          vx: (Math.random() - 0.5) * 12,
+          vy: -10 - Math.random() * 16,
+          radius: 1.2 + Math.random() * 2.2,
+          alpha: 0.2 + Math.random() * 0.5,
+          phase: Math.random() * Math.PI * 2
         });
+      }
+      this.currentScore = (GameState && GameState.getOverallScore) ? GameState.getOverallScore() : 37;
+      this.targetScore = this.currentScore;
+    },
+
+    setTargetScore(val) {
+      this.targetScore = Math.min(100, Math.max(0, val));
+    },
+
+    getAtmospherePhase(score) {
+      if (score < 30) {
+        return { name: '深藍夜色', desc: '天色昏暗陰冷・沉重暗夜', level: 1 };
+      } else if (score < 45) {
+        return { name: '灰藍黎明前', desc: '微光透出・清晨寒意', level: 2 };
+      } else if (score < 60) {
+        return { name: '曙光初現', desc: '地平線溫暖淡黃・晨光初照', level: 3 };
+      } else if (score < 80) {
+        return { name: '日出', desc: '暖橘朝陽灑落・破雲而出', level: 4 };
+      } else {
+        return { name: '晴朗早晨', desc: '陽光破曉・朝氣蓬勃', level: 5 };
       }
     },
 
     update(dt, w, h) {
+      // 若 GameState 狀態有變動，隨時更新目標值
+      if (GameState && GameState.getOverallScore) {
+        this.targetScore = GameState.getOverallScore();
+      }
+
+      // 平滑插值 (Lerp)：讓天色在數值增減時以平滑動態無縫過渡
+      this.currentScore += (this.targetScore - this.currentScore) * Math.min(1.0, dt * 2.0);
+
+      const now = Date.now() / 1000;
       this.particles.forEach(p => {
-        p.x += p.vx * dt;
+        p.x += (p.vx + Math.sin(now + p.phase) * 6) * dt;
         p.y += p.vy * dt;
-        if (p.y < 0) {
-          p.y = h;
+        if (p.y < -10) {
+          p.y = h + 10;
           p.x = Math.random() * w;
         }
         if (p.x < 0) p.x = w;
@@ -1486,64 +1530,126 @@
     draw(ctx, w, h, timeOfDay, stats) {
       ctx.save();
 
-      // 1. 時間維度光影天色濾鏡
-      if (timeOfDay.includes('清晨')) {
+      // 依據規格書 7.2 公式：整體狀態值演變動態光影
+      const score = this.currentScore;
+
+      // ----------------------------------------------------------------------
+      // 1. 五階段全螢幕天色光影演變濾鏡 (平滑過渡)
+      // ----------------------------------------------------------------------
+      if (score < 30) {
+        // [階段 1：0 ～ 29] 深藍夜色：昏暗、陰冷、沉重
+        const deepRatio = 1.0 - (score / 30);
+        // 全螢幕沉重深藍冷調
+        ctx.fillStyle = `rgba(10, 15, 40, ${0.34 + deepRatio * 0.18})`;
+        ctx.fillRect(0, 0, w, h);
+
+        // 壓迫感冷暗角 (Vignette)
+        const vig = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.28, w / 2, h / 2, Math.max(w, h) * 0.72);
+        vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        vig.addColorStop(0.65, `rgba(8, 12, 32, ${0.35 + deepRatio * 0.25})`);
+        vig.addColorStop(1, `rgba(4, 6, 20, ${0.65 + deepRatio * 0.25})`);
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, w, h);
+      }
+      else if (score < 45) {
+        // [階段 2：30 ～ 44] 灰藍黎明前：微光透出、清晨寒意 (開場初始值 37 所在)
+        const t = (score - 30) / 15; // 0 ~ 1
         const grad = ctx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0, 'rgba(180, 210, 240, 0.12)');
-        grad.addColorStop(0.5, 'rgba(255, 240, 210, 0.08)');
-        grad.addColorStop(1, 'rgba(255, 220, 160, 0.14)');
+        // 天空微光透出，地面帶晨涼灰藍薄霧
+        grad.addColorStop(0, `rgba(110, 135, 175, ${0.26 - t * 0.08})`);
+        grad.addColorStop(0.6, `rgba(145, 160, 185, ${0.18 - t * 0.05})`);
+        grad.addColorStop(1, `rgba(175, 180, 195, ${0.15 - t * 0.05})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
-      } else if (timeOfDay.includes('傍晚')) {
+
+        // 黎明柔和暗角
+        const vig = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.4, w / 2, h / 2, Math.max(w, h) * 0.8);
+        vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        vig.addColorStop(1, `rgba(25, 32, 50, ${0.28 - t * 0.12})`);
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, w, h);
+      }
+      else if (score < 60) {
+        // [階段 3：45 ～ 59] 曙光初現：地平線泛出溫暖淡黃
+        const t = (score - 45) / 15;
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, `rgba(140, 175, 215, ${0.12 - t * 0.04})`);
+        grad.addColorStop(0.5, `rgba(255, 235, 170, ${0.15 + t * 0.08})`);
+        grad.addColorStop(1, `rgba(255, 220, 130, ${0.22 + t * 0.08})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 微暖色晨曦輕柔光暈
+        const sunGlow = ctx.createRadialGradient(w * 0.5, h * 0.7, 50, w * 0.5, h * 0.7, Math.max(w, h) * 0.6);
+        sunGlow.addColorStop(0, `rgba(255, 240, 180, ${0.18 + t * 0.10})`);
+        sunGlow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = sunGlow;
+        ctx.fillRect(0, 0, w, h);
+      }
+      else if (score < 80) {
+        // [階段 4：60 ～ 79] 日出：暖橘色光線灑落校園
+        const t = (score - 60) / 20;
         const grad = ctx.createLinearGradient(0, 0, w, h);
-        grad.addColorStop(0, 'rgba(240, 140, 60, 0.18)');
-        grad.addColorStop(0.5, 'rgba(220, 110, 70, 0.15)');
-        grad.addColorStop(1, 'rgba(160, 70, 90, 0.22)');
+        grad.addColorStop(0, `rgba(255, 160, 60, ${0.20 + t * 0.06})`);
+        grad.addColorStop(0.5, `rgba(255, 205, 105, ${0.16 + t * 0.06})`);
+        grad.addColorStop(1, `rgba(240, 135, 75, ${0.18 + t * 0.05})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
-      } else if (timeOfDay.includes('晚上') || timeOfDay.includes('夜深')) {
-        const grad = ctx.createRadialGradient(w / 2, h / 2, 80, w / 2, h / 2, Math.max(w, h));
-        grad.addColorStop(0, 'rgba(250, 220, 160, 0.05)');
-        grad.addColorStop(0.6, 'rgba(25, 30, 55, 0.28)');
-        grad.addColorStop(1, 'rgba(15, 18, 38, 0.45)');
+
+        // 斜照陽光晨曦光芒
+        const sunriseRay = ctx.createRadialGradient(w * 0.15, h * 0.15, 60, w * 0.5, h * 0.5, Math.max(w, h) * 0.8);
+        sunriseRay.addColorStop(0, `rgba(255, 245, 210, ${0.26 + t * 0.08})`);
+        sunriseRay.addColorStop(0.5, `rgba(255, 210, 120, ${0.12 + t * 0.06})`);
+        sunriseRay.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = sunriseRay;
+        ctx.fillRect(0, 0, w, h);
+      }
+      else {
+        // [階段 5：80 ～ 100] 晴朗早晨／破曉：明亮、朝氣蓬勃、明透陽光！
+        const t = Math.min(1.0, (score - 80) / 20);
+        // 全場明朗通透的純淨陽光
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, `rgba(255, 248, 220, ${0.16 + t * 0.06})`);
+        grad.addColorStop(0.5, `rgba(255, 255, 240, ${0.12 + t * 0.04})`);
+        grad.addColorStop(1, `rgba(255, 235, 175, ${0.15 + t * 0.05})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
-      } else {
-        ctx.fillStyle = 'rgba(255, 250, 235, 0.04)';
+
+        // 破曉清晨朝陽大光暈
+        const sunBurst = ctx.createRadialGradient(w * 0.5, h * 0.25, 80, w * 0.5, h * 0.5, Math.max(w, h) * 0.85);
+        sunBurst.addColorStop(0, `rgba(255, 255, 230, ${0.24 + t * 0.08})`);
+        sunBurst.addColorStop(0.6, `rgba(255, 240, 190, ${0.10 + t * 0.05})`);
+        sunBurst.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = sunBurst;
         ctx.fillRect(0, 0, w, h);
       }
 
-      // 2. 心理狀態光影回饋
-      const stress = stats ? stats.stress : 50;
-
-      // A. 高壓力暗角與心跳紅暈
-      if (stress > 65) {
-        const stressRatio = Math.min(1.0, (stress - 65) / 35);
-        const pulse = (Math.sin(Date.now() / 350) + 1) * 0.5;
-        const vigGrad = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.75);
-
-        if (stress >= 85) {
-          vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-          vigGrad.addColorStop(0.7, `rgba(70, 15, 15, ${0.25 + pulse * 0.18 * stressRatio})`);
-          vigGrad.addColorStop(1, `rgba(90, 10, 10, ${0.45 + pulse * 0.25 * stressRatio})`);
-        } else {
-          vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-          vigGrad.addColorStop(0.7, `rgba(20, 15, 20, ${0.20 * stressRatio})`);
-          vigGrad.addColorStop(1, `rgba(10, 5, 15, ${0.40 * stressRatio})`);
-        }
-
-        ctx.fillStyle = vigGrad;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      // B. 平靜與希望光塵
-      if (stress < 55) {
-        ctx.fillStyle = 'rgba(255, 225, 140, 0.45)';
+      // ----------------------------------------------------------------------
+      // 2. 破曉金色微光與光塵微粒 (狀態越高越活躍美麗)
+      // ----------------------------------------------------------------------
+      if (score >= 45) {
+        const particleAlpha = Math.min(0.85, 0.25 + (score - 45) / 55 * 0.6);
+        ctx.fillStyle = `rgba(255, 230, 140, ${particleAlpha})`;
         this.particles.forEach(p => {
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, p.radius * (0.8 + score / 100 * 0.4), 0, Math.PI * 2);
           ctx.fill();
         });
+      }
+
+      // ----------------------------------------------------------------------
+      // 3. 臨界狀態應急表現：壓力過載前夕 (壓力 > 80 時的心跳警戒警訊)
+      // ----------------------------------------------------------------------
+      const stress = stats ? stats.stress : 50;
+      if (stress > 80) {
+        const pulse = (Math.sin(Date.now() / 280) + 1) * 0.5;
+        const alertRatio = (stress - 80) / 20;
+        const alertVig = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.75);
+        alertVig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        alertVig.addColorStop(0.7, `rgba(90, 15, 15, ${0.18 * alertRatio * pulse})`);
+        alertVig.addColorStop(1, `rgba(130, 20, 20, ${0.40 * alertRatio * pulse})`);
+        ctx.fillStyle = alertVig;
+        ctx.fillRect(0, 0, w, h);
       }
 
       ctx.restore();
@@ -1615,14 +1721,14 @@
         ];
       }
       else if (sceneId === 'S7') {
-        // S7 學務處 (704x512)
+        // S7 學務處 (704x512) - 長桌實際範圍 (X:215~515, Y:272~368)，保留四周座椅暢行
         return [
           { x: 0, y: 0, w: 704, h: 160, tag: 'wall_north' },
           { x: 0, y: 0, w: 50, h: 512, tag: 'wall_west' },
           { x: 654, y: 0, w: 50, h: 512, tag: 'wall_east' },
           { x: 0, y: 470, w: 290, h: 42, tag: 'wall_south_left' },
           { x: 410, y: 470, w: 294, h: 42, tag: 'wall_south_right' },
-          { x: 190, y: 190, w: 320, h: 150, tag: 'meeting_table' }
+          { x: 215, y: 272, w: 300, h: 96, tag: 'meeting_table' }
         ];
       }
       else if (sceneId === 'S1') {
@@ -1952,20 +2058,20 @@
         if (GameState.quest.step === 6 && !GameState.quest.completedNodes.has('node6')) {
           items.push({
             id: 'node6_event',
-            x: 350,
-            y: 365,
-            radius: 55,
+            x: 365,
+            y: 395,
+            radius: 50,
             prompt: '按 [E] 入座參加三方會談',
             nodeId: 'node6'
           });
         } else {
           items.push({
             id: 's7_idle',
-            x: 350,
-            y: 365,
-            radius: 55,
+            x: 365,
+            y: 395,
+            radius: 50,
             prompt: '按 [E] 查看會議長桌',
-            inspectText: '「學務主任沉穩地說：『在學校如果遇到任何同儕困擾或不當行為，一定要第一時間向師長反映。』」'
+            inspectText: '「生教組長沉穩地說：『在學校如果遇到任何同儕困擾或不當行為，一定要第一時間向師長反映。』」'
           });
         }
         return items;
@@ -2483,7 +2589,15 @@
     // 更新 HUD 與五維數值長條圖 (支援 2 秒浮動增減標籤)
     updateHUD(deltas = null) {
       const s = GameState.stats;
-      document.getElementById('hud-day').textContent = `Day ${GameState.day}・${GameState.timeOfDay}`;
+      const score = (GameState && GameState.getOverallScore) ? GameState.getOverallScore() : 37;
+      const phase = (AtmosphereRenderer && AtmosphereRenderer.getAtmospherePhase)
+        ? AtmosphereRenderer.getAtmospherePhase(score)
+        : { name: '灰藍黎明前', desc: '清晨微光' };
+
+      const hudDay = document.getElementById('hud-day');
+      if (hudDay) {
+        hudDay.textContent = `Day ${GameState.day}・${GameState.timeOfDay} ｜ 天色：${phase.name}`;
+      }
 
       const spec = AssetLoader.sceneSpecs[GameState.currentSceneId];
       document.getElementById('hud-scene-name').textContent = `${GameState.currentSceneId} ${spec ? spec.name : ''}`;
@@ -2984,7 +3098,7 @@
       // S7 學務處
       else if (sId === 'S7') {
         if (q.step === 6 && !q.completedNodes.has('node6')) {
-          return { x: 350, y: 365, isFinal: true }; // 三方會談長桌前
+          return { x: 365, y: 395, isFinal: true }; // 三方會談主角座椅
         } else {
           return { x: 350, y: 480, isFinal: false }; // 離開門
         }
@@ -3084,21 +3198,20 @@
         }
       }
       else if (sId === 'S4') {
-        // Node 2 (飲水機攔截事件)：同學甲與同學乙圍住飲水機
+        // Node 2 (飲水機攔截事件)：僅同學甲攔截，絕不提前出現同學乙！
         if (q.step === 2 && !q.completedNodes.has('node2')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 505, 310, 'classmate_a', true, 'right', 0, '同學甲');
-          CharacterSpriteRenderer.drawNPC(ctx, 535, 310, 'classmate_b', false, 'left', 0, '同學乙');
+          CharacterSpriteRenderer.drawNPC(ctx, 520, 310, 'classmate_a', true, 'down', 0, '同學甲');
         }
-        // Node 5 (午休走廊遭遇)：同學乙
+        // Node 5 (午休走廊遭遇)：同學乙首度在此正式現身！
         else if (q.step === 5 && !q.completedNodes.has('node5')) {
           CharacterSpriteRenderer.drawNPC(ctx, 320, 310, 'classmate_b', true, 'down', 0, '同學乙');
         }
       }
       else if (sId === 'S5') {
-        // Node 4 (同儕閒話事件)：穿堂同學甲與同學乙
+        // Node 4 (同儕閒話事件)：穿堂路人同學丁與同學戊（不出現同學乙）
         if (q.step === 4 && !q.completedNodes.has('node4')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 370, 310, 'classmate_a', true, 'right', 0, '同學甲');
-          CharacterSpriteRenderer.drawNPC(ctx, 400, 310, 'classmate_b', true, 'left', 0, '同學乙');
+          CharacterSpriteRenderer.drawNPC(ctx, 370, 310, 'classmate_d', true, 'right', 0, '同學丁');
+          CharacterSpriteRenderer.drawNPC(ctx, 400, 310, 'classmate_e', true, 'left', 0, '同學戊');
         }
       }
       else if (sId === 'S6') {
@@ -3107,39 +3220,29 @@
         CharacterSpriteRenderer.drawNPC(ctx, 380, 240, 'counselor', isTargetCounselor, 'down', 0, '輔導老師');
       }
       else if (sId === 'S7') {
-        // 學務處三方會談 (長桌 x:190~510, y:190~340)：生教組長、家長、學生分別坐在會議桌座椅上
+        // 學務處三方會談 (長桌 X:220~515, Y:275~365)：生教組長、家長、學生分別坐在會議桌座椅上
         const isTargetDiscipline = (q.step === 6 && !q.completedNodes.has('node6'));
 
-        // 1. 北側主席椅 (長桌正上方主位)：生教組長長駐主持
-        CharacterSpriteRenderer.drawNPC(ctx, 350, 165, 'discipline_master', false, 'down', 0, '生教組長');
+        // 1. 北側主席椅 (長桌正上方主位)：生教組長長駐主持 (精準座標 365, 258)
+        CharacterSpriteRenderer.drawNPC(ctx, 365, 258, 'discipline_master', false, 'down', 0, '生教組長');
 
         // 2. 三方會談期間 (Node 6)：雙方家長與學生皆坐在會議桌座椅，呈現嚴肅真實的面對面三方會談！
         if (isTargetDiscipline) {
-          // 西側家長席 (左邊座椅)：主角媽媽面對會議桌
-          CharacterSpriteRenderer.drawNPC(ctx, 165, 260, 'mother', false, 'right', 0, '媽媽');
+          // 西側家長席 (左邊木椅)：主角媽媽面對會議桌 (精準座標 190, 325)
+          CharacterSpriteRenderer.drawNPC(ctx, 190, 325, 'mother', false, 'right', 0, '媽媽');
 
-          // 東側對立席 (右邊座椅)：同學乙爸爸與同學乙依序入座
-          CharacterSpriteRenderer.drawNPC(ctx, 535, 235, 'classmate_b_dad', false, 'left', 0, '同學乙爸爸');
-          CharacterSpriteRenderer.drawNPC(ctx, 535, 295, 'classmate_b', false, 'left', 0, '同學乙');
+          // 東側對立席 (右邊木椅)：同學乙爸爸面對會議桌 (精準座標 540, 325)
+          CharacterSpriteRenderer.drawNPC(ctx, 540, 325, 'classmate_b_dad', false, 'left', 0, '同學乙爸爸');
+          // 北側右席 (爸爸身旁)：同學乙依序入座 (精準座標 475, 258)
+          CharacterSpriteRenderer.drawNPC(ctx, 475, 258, 'classmate_b', false, 'down', 0, '同學乙');
 
-          // 南側主角座位引導：繪製座椅輪廓與入座標籤
+          // 南側主角座位引導：入座長桌南側中央木椅 (精準座標 365, 395)
           ctx.save();
           const chairPulse = (Math.sin(Date.now() / 320) + 1) * 0.5;
 
-          // 木質會議椅
-          ctx.fillStyle = 'rgba(50, 36, 26, 0.3)';
-          ctx.beginPath();
-          ctx.ellipse(350, 370, 16, 6, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#6e5138';
-          ctx.fillRect(341, 356, 18, 12);
-          ctx.fillStyle = '#9e7955';
-          ctx.fillRect(339, 350, 22, 6);
-
           // 座位金黃色光圈與入座標記
           ctx.beginPath();
-          ctx.ellipse(350, 365, 22 + chairPulse * 4, 9 + chairPulse * 2, 0, 0, Math.PI * 2);
+          ctx.ellipse(365, 395, 20 + chairPulse * 4, 8 + chairPulse * 2, 0, 0, Math.PI * 2);
           ctx.strokeStyle = `rgba(235, 160, 30, ${0.7 + chairPulse * 0.3})`;
           ctx.lineWidth = 2;
           ctx.stroke();
@@ -3147,7 +3250,7 @@
           ctx.font = 'bold 11px sans-serif';
           ctx.fillStyle = '#e8a530';
           ctx.textAlign = 'center';
-          ctx.fillText('【你的座位】', 350, 340 - chairPulse * 3);
+          ctx.fillText('【你的座位】', 365, 370 - chairPulse * 3);
           ctx.restore();
         }
       }
@@ -3237,7 +3340,24 @@
         node.intro.forEach(item => {
           if (item.type === 'narrative') {
             lines.push({ speaker: '旁白', text: item.text, npc: null });
-          } else {
+          } else if (item.type === 'conditional') {
+            // 條件分支解析 (例如 Q1 == 'B' 照片存證分支)
+            const cond = item.condition || '';
+            let isMet = false;
+            const match = cond.match(/(\w+)\s*==\s*['"](\w+)['"]/);
+            if (match) {
+              const qKey = match[1];
+              const val = match[2];
+              isMet = (GameState.playerChoices[qKey] === val);
+            }
+            if (isMet) {
+              const c = item.content || {};
+              lines.push({ speaker: c.speaker || '老師', text: c.text, npc: c.speaker || '老師' });
+            } else {
+              // 若未拍照存證（非選 B 情況），依指示以「（沉默不語）」呈現受凌學生的心理狀態
+              lines.push({ speaker: '你', text: '（沉默不語）', npc: null });
+            }
+          } else if (item.speaker && item.text) {
             lines.push({ speaker: item.speaker, text: item.text, npc: item.speaker });
           }
         });
@@ -3431,8 +3551,41 @@
       d.waitingChoice = false;
       document.getElementById('choices-container').style.display = 'none';
 
+      // 記錄玩家在該題目的抉擇代號 (例如 { Q1: 'B' })
+      const node = d.currentNodeData;
+      const qId = (node && node.question) ? node.question.id : null;
+      if (qId && option.letter) {
+        GameState.playerChoices[qId] = option.letter;
+      }
+
+      // 將玩家的抉擇回答加入對話歷程清單中
+      if (!Array.isArray(d.history)) d.history = [];
+      d.history.push({
+        speaker: '你（你的抉擇）',
+        text: option.text
+      });
+
+      // 依使用者指示：若選擇完後還會繼續對話，將玩家回答即時加入上方對話歷程並保持顯示
       const histContainer = document.getElementById('dialogue-history-container');
-      if (histContainer) histContainer.style.display = 'none';
+      const histList = document.getElementById('dialogue-history-list');
+      if (histContainer && histList) {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'history-item';
+        itemDiv.style.borderLeft = '3px solid #3b82f6';
+        itemDiv.style.background = 'rgba(235, 245, 255, 0.85)';
+        const spkSpan = document.createElement('span');
+        spkSpan.className = 'history-item-speaker';
+        spkSpan.style.color = '#1d4ed8';
+        spkSpan.textContent = '你（你的抉擇）：';
+        const txtSpan = document.createElement('span');
+        txtSpan.className = 'history-item-text';
+        txtSpan.textContent = option.text;
+        itemDiv.appendChild(spkSpan);
+        itemDiv.appendChild(txtSpan);
+        histList.appendChild(itemDiv);
+        histContainer.style.display = 'block';
+        histList.scrollTop = histList.scrollHeight;
+      }
 
       // 1. 數值變更結算
       const eff = option.effects || { stress: 0, peer: 0, courage: 0, safety: 0, selfEsteem: 0 };
@@ -3441,6 +3594,11 @@
       GameState.stats.courage = Math.min(100, Math.max(0, GameState.stats.courage + (eff.courage || 0)));
       GameState.stats.safety = Math.min(100, Math.max(0, GameState.stats.safety + (eff.safety || 0)));
       GameState.stats.selfEsteem = Math.min(100, Math.max(0, GameState.stats.selfEsteem + (eff.selfEsteem || 0)));
+
+      // 依據整體狀態值更新全場景動態光影演變目標
+      if (AtmosphereRenderer && AtmosphereRenderer.setTargetScore) {
+        AtmosphereRenderer.setTargetScore(GameState.getOverallScore());
+      }
 
       // 觸發頂部 2 秒浮動增減標籤回饋！
       this.updateHUD(eff);
