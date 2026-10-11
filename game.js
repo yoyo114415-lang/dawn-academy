@@ -2596,7 +2596,7 @@
 
       const hudDay = document.getElementById('hud-day');
       if (hudDay) {
-        hudDay.textContent = `Day ${GameState.day}・${GameState.timeOfDay} ｜ 天色：${phase.name}`;
+        hudDay.textContent = `Day ${GameState.day}・${GameState.timeOfDay} ｜ 天色：${phase.name} ｜ 整體狀態值：${score} 分`;
       }
 
       const spec = AssetLoader.sceneSpecs[GameState.currentSceneId];
@@ -3974,7 +3974,13 @@
       if (!breakdownEl) return;
 
       const statsList = [
-        { name: '放鬆度（原壓力值）', val: 100 - s.stress, initial: 50, color: '#c0392b' },
+        {
+          name: '放鬆度（原壓力值，公式：100 - 壓力值）',
+          val: 100 - s.stress,
+          initial: 50,
+          color: '#c0392b',
+          desc: `💡 分數來源：由 100 - 當前壓力值（${s.stress}）計算得出，代表身心平復與走出陰霾的程度。`
+        },
         { name: '同儕關係值', val: s.peer, initial: 30, color: '#8e44ad' },
         { name: '勇氣值', val: s.courage, initial: 40, color: '#e67e22' },
         { name: '安全感', val: s.safety, initial: 35, color: '#27ae60' },
@@ -4038,6 +4044,16 @@
         itemDiv.appendChild(rowDiv);
         itemDiv.appendChild(barBg);
 
+        if (item.desc) {
+          const descDiv = document.createElement('div');
+          descDiv.style.fontSize = '11.5px';
+          descDiv.style.color = '#7a6452';
+          descDiv.style.marginTop = '5px';
+          descDiv.style.lineHeight = '1.45';
+          descDiv.textContent = item.desc;
+          itemDiv.appendChild(descDiv);
+        }
+
         breakdownEl.appendChild(itemDiv);
       });
     },
@@ -4058,7 +4074,7 @@
 
       // 五維數值規格（正五角形分佈，順時針：放鬆度、安全感、自我肯定、同儕關係值、勇氣值）
       const initialAxes = [
-        { name: '放鬆度（原壓力值）', val: 50 },
+        { name: '放鬆度 (100-壓力值)', val: 50 },
         { name: '安全感', val: 35 },
         { name: '自我肯定', val: 30 },
         { name: '同儕關係值', val: 30 },
@@ -4066,7 +4082,7 @@
       ];
 
       const currentAxes = [
-        { name: '放鬆度（原壓力值）', val: Math.min(100, Math.max(0, stats ? (100 - stats.stress) : 50)) },
+        { name: '放鬆度 (100-壓力值)', val: Math.min(100, Math.max(0, stats ? (100 - stats.stress) : 50)) },
         { name: '安全感', val: Math.min(100, Math.max(0, stats ? stats.safety : 35)) },
         { name: '自我肯定', val: Math.min(100, Math.max(0, stats ? stats.selfEsteem : 30)) },
         { name: '同儕關係值', val: Math.min(100, Math.max(0, stats ? stats.peer : 30)) },
