@@ -2954,6 +2954,14 @@
           }
         }, 4200);
       }
+
+      // 切換場景時若正處於導航模式，無縫維持導航模式並確保 UI 狀態同步！
+      if (GameState.navigation.active) {
+        const btn = document.getElementById('btn-quest-navigate');
+        const text = document.getElementById('nav-btn-text');
+        if (btn) btn.classList.add('nav-active');
+        if (text) text.textContent = '導航中（點擊關閉）';
+      }
     },
 
     // 世界座標轉螢幕座標 (精確對齊 Contain 全貌縮放視角)
@@ -3090,12 +3098,13 @@
       if (text) text.textContent = '導航中（點擊關閉）';
 
       SoundFX.positive();
-      this.showToast('地面導航路線已開啟，請跟隨金色箭頭前進！');
+      this.showToast('地面導航光波已開啟，請跟隨前方金色箭頭前進！');
 
+      // 充裕防呆超時保護 (120 秒)，在正常探索與跨場景時持續提供引導
       if (this._navTimer) clearTimeout(this._navTimer);
       this._navTimer = setTimeout(() => {
         this.stopNavigation();
-      }, 12000);
+      }, 120000);
     },
 
     // 關閉地面尋路導航
@@ -3202,7 +3211,7 @@
       return points;
     },
 
-    // 沿路徑長度取樣並繪製地面流動金色箭頭光徑 (取代原本常駐的大箭頭)
+    // 沿路徑長度取樣並繪製地面「前瞻流動金色光波」（走過即隱，身後零殘留，抵達平滑淡出）
     drawNavigationRoute(ctx, player, targetLoc) {
       if (!targetLoc || GameState.dialogue.active) return;
 
@@ -3210,61 +3219,98 @@
       const dy = targetLoc.y - player.y;
       const directDist = Math.hypot(dx, dy);
 
-      // 當玩家已經靠近目標時（小於 36px），自動關閉導航
-      if (directDist < 36) {
+      // 僅在「最終目標 (isFinal: true)」且玩家已抵達附近 (小於 36px) 時才自動完成並關閉導航
+      // 若是中途過渡門口 (isFinal: false)，絕不關閉導航，待玩家跨場景後繼續引導！
+      if (targetLoc.isFinal && directDist < 36) {
         this.stopNavigation();
         return;
       }
 
-      const points = this.findScenePath({ x: player.x, y: player.y }, targetLoc);
-      if (points.length < 2) return;
+      // 當距離過近且是門口時暫不繪製，避免擠在腳底
+      if (!targetLoc.isFinal && directDist < 16) return;
 
-      ctx.save();
+      const fullPoints = this.findScenePath({ x: player.x, y: player.y }, targetLoc);
+      if (fullPoints.length < 2) return;
 
-      // 1. 底層發光光束
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.strokeStyle = 'rgba(255, 195, 45, 0.35)';
-      ctx.lineWidth = 10;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.shadowColor = '#ffb300';
-      ctx.shadowBlur = 10;
-      ctx.stroke();
-
-      // 2. 核心流動金光虛線
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      const dashOffset = -(Date.now() / 25) % 36;
-      ctx.setLineDash([16, 14]);
-      ctx.lineDashOffset = dashOffset;
-      ctx.strokeStyle = 'rgba(255, 245, 180, 0.9)';
-      ctx.lineWidth = 3.5;
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // 3. 計算各線段長度與累計長度，在線段上均勻鋪設地面黃色箭頭
+      // 1. 計算各線段長度與累計總長度
       const segments = [];
       let totalLength = 0;
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
+      for (let i = 0; i < fullPoints.length - 1; i++) {
+        const p1 = fullPoints[i];
+        const p2 = fullPoints[i + 1];
         const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         segments.push({ p1, p2, len: segLen, angle, startDist: totalLength });
         totalLength += segLen;
       }
 
-      const arrowSpacing = 42;
+      if (totalLength < 10) return;
+
+      // 2. 前瞻引導長度：限制只在學生前方 180~210px 內顯示光波，走過的路段即時消隱
+      const maxLookahead = 210;
+      const visibleLength = Math.min(totalLength, maxLookahead);
+
+      // 抵達最終目標時的平滑淡出係數 (當距離小於 90px 時逐步漸隱，無生硬殘留)
+      let arrivalFade = 1.0;
+      if (targetLoc.isFinal && directDist < 90) {
+        arrivalFade = Math.max(0, Math.min(1, (directDist - 34) / 56));
+      }
+      if (arrivalFade <= 0.02) return;
+
+      // 擷取前瞻路徑點 (用於繪製前瞻光帶)
+      const lookaheadPoints = [fullPoints[0]];
+      let accumulated = 0;
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (accumulated + seg.len <= visibleLength) {
+          lookaheadPoints.push(seg.p2);
+          accumulated += seg.len;
+        } else {
+          const remain = visibleLength - accumulated;
+          const ratio = seg.len > 0 ? remain / seg.len : 0;
+          lookaheadPoints.push({
+            x: seg.p1.x + (seg.p2.x - seg.p1.x) * ratio,
+            y: seg.p1.y + (seg.p2.y - seg.p1.y) * ratio
+          });
+          break;
+        }
+      }
+
+      ctx.save();
+
+      // 3. 繪製前方柔和金色微光束 (淡雅流暢，不刺眼)
+      ctx.beginPath();
+      ctx.moveTo(lookaheadPoints[0].x, lookaheadPoints[0].y);
+      for (let i = 1; i < lookaheadPoints.length; i++) {
+        ctx.lineTo(lookaheadPoints[i].x, lookaheadPoints[i].y);
+      }
+      ctx.strokeStyle = `rgba(255, 195, 45, ${0.28 * arrivalFade})`;
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowColor = '#ffb300';
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+
+      // 4. 繪製前方流動金光核心虛線
+      ctx.beginPath();
+      ctx.moveTo(lookaheadPoints[0].x, lookaheadPoints[0].y);
+      for (let i = 1; i < lookaheadPoints.length; i++) {
+        ctx.lineTo(lookaheadPoints[i].x, lookaheadPoints[i].y);
+      }
+      const dashOffset = -(Date.now() / 28) % 32;
+      ctx.setLineDash([12, 12]);
+      ctx.lineDashOffset = dashOffset;
+      ctx.strokeStyle = `rgba(255, 245, 180, ${0.75 * arrivalFade})`;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 5. 沿著前方視野長度等距取樣，繪製輕巧扁平的向前指引箭頭
+      const arrowSpacing = 36;
       const now = Date.now();
 
-      for (let d = 20; d < totalLength - 15; d += arrowSpacing) {
+      for (let d = 20; d <= visibleLength - 8; d += arrowSpacing) {
         const seg = segments.find(s => d >= s.startDist && d <= s.startDist + s.len);
         if (!seg || seg.len === 0) continue;
 
@@ -3272,49 +3318,61 @@
         const ax = seg.p1.x + (seg.p2.x - seg.p1.x) * ratio;
         const ay = seg.p1.y + (seg.p2.y - seg.p1.y) * ratio;
 
-        // 沿路徑傳播的動態光波漣漪
-        const wave = (Math.sin(now / 200 - d * 0.05) + 1) * 0.5;
+        // 距離包絡權重：腳跟處 (d < 30) 柔和漸現，前端 (d > 140) 漸隱入地磚
+        let envelope = 1.0;
+        if (d < 30) {
+          envelope = (d - 12) / 18;
+        } else if (d > 140) {
+          envelope = Math.max(0, (visibleLength - d) / (visibleLength - 140));
+        }
+        envelope = Math.max(0, Math.min(1, envelope)) * arrivalFade;
+        if (envelope <= 0.05) continue;
+
+        // 沿流向傳播的明暗流動光波
+        const wave = (Math.sin(now / 180 - d * 0.06) + 1) * 0.5;
 
         ctx.save();
         ctx.translate(ax, ay);
         ctx.rotate(seg.angle);
 
-        // 繪製地面扁平箭頭
+        // 繪製輕盈扁平箭頭
         ctx.beginPath();
-        ctx.moveTo(8, 0);
-        ctx.lineTo(-6, -6);
-        ctx.lineTo(-2, 0);
-        ctx.lineTo(-6, 6);
+        ctx.moveTo(6.5, 0);
+        ctx.lineTo(-4.5, -4.5);
+        ctx.lineTo(-1.5, 0);
+        ctx.lineTo(-4.5, 4.5);
         ctx.closePath();
 
-        ctx.fillStyle = `rgba(255, 220, 70, ${0.45 + wave * 0.5})`;
+        ctx.fillStyle = `rgba(255, 225, 80, ${(0.35 + wave * 0.55) * envelope})`;
         ctx.fill();
-        ctx.strokeStyle = `rgba(215, 140, 20, ${0.6 + wave * 0.4})`;
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = `rgba(215, 145, 25, ${(0.5 + wave * 0.45) * envelope})`;
+        ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.restore();
       }
 
-      // 4. 終點目標動態光圈
-      const pulse = (now / 350) % (Math.PI * 2);
-      const rippleT = (now / 700) % 1;
-      const rippleR = 14 + rippleT * 22;
-      const rippleAlpha = 1 - rippleT;
+      // 6. 終點目標動態呼吸光環
+      if (arrivalFade > 0.1) {
+        const pulse = (now / 350) % (Math.PI * 2);
+        const rippleT = (now / 700) % 1;
+        const rippleR = 12 + rippleT * 18;
+        const rippleAlpha = (1 - rippleT) * arrivalFade;
 
-      ctx.beginPath();
-      ctx.ellipse(targetLoc.x, targetLoc.y, rippleR, rippleR * 0.55, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 215, 0, ${rippleAlpha * 0.8})`;
-      ctx.lineWidth = 2.2;
-      ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(targetLoc.x, targetLoc.y, rippleR, rippleR * 0.55, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 215, 0, ${rippleAlpha * 0.75})`;
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
 
-      ctx.beginPath();
-      ctx.ellipse(targetLoc.x, targetLoc.y, 14 + Math.sin(pulse) * 3, (14 + Math.sin(pulse) * 3) * 0.55, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 235, 120, 0.45)';
-      ctx.fill();
-      ctx.strokeStyle = '#ffc83b';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(targetLoc.x, targetLoc.y, 12 + Math.sin(pulse) * 2.5, (12 + Math.sin(pulse) * 2.5) * 0.55, 0, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 235, 120, ${0.4 * arrivalFade})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255, 200, 50, ${arrivalFade})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
 
       ctx.restore();
     },
