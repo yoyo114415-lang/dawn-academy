@@ -8,8 +8,72 @@
   'use strict';
 
   // ==========================================================================
-  // 1. 全域狀態管理與設定
+  // 1. 全域任務資料庫與狀態管理
   // ==========================================================================
+  // RPG 任務日誌全階段資料庫 (對應 Node 1 ~ Node 9 與大結局)
+  const QuestDatabase = {
+    1: {
+      title: '【主線一】清晨的惡意紙條',
+      desc: '清晨教室格外寂靜，走回發光的個人座位，查看桌上被惡作劇留下的嘲笑紙條與垃圾。',
+      objective: '走向座位並按 [E] 檢查',
+      location: 'S3 班級教室 (個人座位)'
+    },
+    2: {
+      title: '【主線二】飲水機的惡意圍堵',
+      desc: '第一節下課走出教室裝水，同學甲在飲水機前故意擋住去路並出言諷刺。',
+      objective: '走到飲水機旁面對同學甲按 [E]',
+      location: 'S4 走廊 (飲水機前)'
+    },
+    3: {
+      title: '【主線三】向導師傾訴求援',
+      desc: '內心承受巨大壓力，決定前往輔導室向信任的導師全盤說出遭遇。',
+      objective: '進入輔導室並與導師對話',
+      location: 'S6 輔導室 (導師辦公桌)'
+    },
+    4: {
+      title: '【主線四】穿堂碎語與輿論蔓延',
+      desc: '穿堂傳來其他班級同學的指指點點與竊竊私語，謠言似乎在校園發酵。',
+      objective: '前往穿堂聆聽同儕對話',
+      location: 'S5 穿堂 (中央廊道)'
+    },
+    5: {
+      title: '【主線五】走廊的正面衝突',
+      desc: '午休走廊上，主謀同學乙迎面走來並直接言語挑釁，必須做出堅定回應。',
+      objective: '在走廊直面同學乙按 [E]',
+      location: 'S4 走廊 (西側走道)'
+    },
+    6: {
+      title: '【主線六】學務處三方協調會談',
+      desc: '學校召開防制霸凌調查會議，生教組長、家長與同學共同出席釐清真相。',
+      objective: '入座會議桌展開三方對話',
+      location: 'S7 學務處 (長會議桌)'
+    },
+    7: {
+      title: '【主線七】深夜臥室的避風港',
+      desc: '會談結束身心俱疲返家，在臥室中向母親傾訴心中的恐懼與委屈。',
+      objective: '走向床邊與母親深入對話',
+      location: 'S8 家：臥室 (床邊)'
+    },
+    8: {
+      title: '【主線八】客廳電話與導師支持',
+      desc: '客廳電話鈴聲響起，導師致電傳達調查進度與對你的全力支持。',
+      objective: '走向客廳小几接聽電話',
+      location: 'S9 家：客廳 (電話小几)'
+    },
+    9: {
+      title: '【主線九】破曉微光・重返教室',
+      desc: '調查告一段落重返教室，友善的同學丙主動打招呼並伸出溫暖援手。',
+      objective: '與同學丙交談感受同儕支持',
+      location: 'S3 班級教室 (同學丙座位)'
+    },
+    10: {
+      title: '【大結局】走出校門・破曉新生',
+      desc: '走出校園大門，晨曦破曉照耀大地，迎向嶄新的自我與校園生活！',
+      objective: '穿過穿堂前往校門口按 [E]',
+      location: 'S2 校門口 (中央大道)'
+    }
+  };
+
   const GameState = {
     screen: 'cover',           // 'cover' | 'select' | 'game'
     selectedGender: 'boy',     // 'boy' | 'girl' | 'neutral'
@@ -41,6 +105,11 @@
       activeNodeId: 'node1',   // 當前進行中的劇本節點
       text: '請走到發光的座位查看嘲笑紙條',
       completedNodes: new Set()// 已完成的節點集合，絕不重複觸發！
+    },
+
+    // 地面尋路導航狀態 (點擊右側面板按鈕後啟動金色流動光徑)
+    navigation: {
+      active: false
     },
 
     // 場景與時間
@@ -2401,6 +2470,22 @@
         });
       }
 
+      // RPG 任務日誌：收合 / 展開按鈕
+      const toggleQuestBtn = document.getElementById('btn-toggle-quest-panel');
+      if (toggleQuestBtn) {
+        toggleQuestBtn.addEventListener('click', () => {
+          this.toggleQuestPanel();
+        });
+      }
+
+      // RPG 任務日誌：點擊開啟 / 關閉地面導航路線按鈕
+      const questNavBtn = document.getElementById('btn-quest-navigate');
+      if (questNavBtn) {
+        questNavBtn.addEventListener('click', () => {
+          this.toggleNavigation();
+        });
+      }
+
       this.bindMobileControls();
     },
 
@@ -2578,12 +2663,26 @@
       }
     },
 
-    // 更新任務目標橫條
+    // 更新任務目標橫條與右側 RPG 任務追蹤面板
     updateQuestBanner() {
       const el = document.getElementById('quest-text');
       if (el) {
         el.textContent = GameState.quest.text;
       }
+
+      // 同步更新右側 RPG 任務日誌面板
+      const step = GameState.quest.completedNodes.has('node9') ? 10 : GameState.quest.step;
+      const questData = QuestDatabase[step] || QuestDatabase[1];
+
+      const titleEl = document.getElementById('quest-tracker-title');
+      const descEl = document.getElementById('quest-tracker-desc');
+      const objEl = document.getElementById('quest-tracker-objective');
+      const locEl = document.getElementById('quest-tracker-location');
+
+      if (titleEl) titleEl.textContent = questData.title;
+      if (descEl) descEl.textContent = questData.desc;
+      if (objEl) objEl.textContent = `▶ 目標：${questData.objective}`;
+      if (locEl) locEl.textContent = `▶ 地點：${questData.location}`;
     },
 
     // 更新 HUD 與五維數值長條圖 (支援 2 秒浮動增減標籤)
@@ -2926,11 +3025,265 @@
       ]
     },
 
-    // 更新左上方單一羅盤箭頭角度 (動態旋轉指引)
+    // 收合或展開任務日誌面板
+    toggleQuestPanel() {
+      const panel = document.getElementById('quest-tracker-panel');
+      const btn = document.getElementById('btn-toggle-quest-panel');
+      if (!panel || !btn) return;
+      const isCollapsed = panel.classList.toggle('collapsed');
+      btn.textContent = isCollapsed ? '◀' : '▶';
+      btn.title = isCollapsed ? '展開任務日誌' : '收合任務日誌';
+      SoundFX.click();
+    },
+
+    // 啟動地面尋路導航
+    startNavigation() {
+      const targetLoc = this.getCurrentTargetLocation();
+      if (!targetLoc) {
+        this.showToast('當前區域暫無導航目標');
+        return;
+      }
+      GameState.navigation.active = true;
+      const btn = document.getElementById('btn-quest-navigate');
+      const text = document.getElementById('nav-btn-text');
+      if (btn) btn.classList.add('nav-active');
+      if (text) text.textContent = '導航中（點擊關閉）';
+
+      SoundFX.positive();
+      this.showToast('地面導航路線已開啟，請跟隨金色箭頭前進！');
+
+      if (this._navTimer) clearTimeout(this._navTimer);
+      this._navTimer = setTimeout(() => {
+        this.stopNavigation();
+      }, 12000);
+    },
+
+    // 關閉地面尋路導航
+    stopNavigation() {
+      GameState.navigation.active = false;
+      const btn = document.getElementById('btn-quest-navigate');
+      const text = document.getElementById('nav-btn-text');
+      if (btn) btn.classList.remove('nav-active');
+      if (text) text.textContent = '點擊開啟地面導航路線';
+      if (this._navTimer) {
+        clearTimeout(this._navTimer);
+        this._navTimer = null;
+      }
+    },
+
+    // 切換地面尋路導航
+    toggleNavigation() {
+      if (GameState.navigation.active) {
+        this.stopNavigation();
+        SoundFX.click();
+      } else {
+        this.startNavigation();
+      }
+    },
+
+    // 拓撲路網最短路徑搜尋 (BFS)
+    findScenePath(startPos, endPos) {
+      const sId = GameState.currentSceneId;
+      const nodes = this.sceneWaypoints[sId];
+      if (!nodes || nodes.length === 0) {
+        return [startPos, endPos];
+      }
+
+      let startNode = null;
+      let minStartDist = Infinity;
+      let endNode = null;
+      let minEndDist = Infinity;
+
+      for (const n of nodes) {
+        const dStart = Math.hypot(n.x - startPos.x, n.y - startPos.y);
+        if (dStart < minStartDist) {
+          minStartDist = dStart;
+          startNode = n;
+        }
+        const dEnd = Math.hypot(n.x - endPos.x, n.y - endPos.y);
+        if (dEnd < minEndDist) {
+          minEndDist = dEnd;
+          endNode = n;
+        }
+      }
+
+      if (!startNode || !endNode) {
+        return [startPos, endPos];
+      }
+
+      if (startNode.id === endNode.id) {
+        return [startPos, { x: startNode.x, y: startNode.y }, endPos];
+      }
+
+      const nodeMap = new Map();
+      nodes.forEach(n => nodeMap.set(n.id, n));
+
+      const queue = [startNode.id];
+      const visited = new Set([startNode.id]);
+      const prev = new Map();
+
+      let found = false;
+      while (queue.length > 0) {
+        const curId = queue.shift();
+        if (curId === endNode.id) {
+          found = true;
+          break;
+        }
+        const curNode = nodeMap.get(curId);
+        if (curNode && curNode.to) {
+          for (const nextId of curNode.to) {
+            if (!visited.has(nextId)) {
+              visited.add(nextId);
+              prev.set(nextId, curId);
+              queue.push(nextId);
+            }
+          }
+        }
+      }
+
+      if (!found) {
+        return [startPos, endPos];
+      }
+
+      const pathIds = [];
+      let curr = endNode.id;
+      while (curr) {
+        pathIds.unshift(curr);
+        curr = prev.get(curr);
+      }
+
+      const points = [startPos];
+      for (const id of pathIds) {
+        const n = nodeMap.get(id);
+        if (n) points.push({ x: n.x, y: n.y });
+      }
+      points.push(endPos);
+
+      return points;
+    },
+
+    // 沿路徑長度取樣並繪製地面流動金色箭頭光徑 (取代原本常駐的大箭頭)
+    drawNavigationRoute(ctx, player, targetLoc) {
+      if (!targetLoc || GameState.dialogue.active) return;
+
+      const dx = targetLoc.x - player.x;
+      const dy = targetLoc.y - player.y;
+      const directDist = Math.hypot(dx, dy);
+
+      // 當玩家已經靠近目標時（小於 36px），自動關閉導航
+      if (directDist < 36) {
+        this.stopNavigation();
+        return;
+      }
+
+      const points = this.findScenePath({ x: player.x, y: player.y }, targetLoc);
+      if (points.length < 2) return;
+
+      ctx.save();
+
+      // 1. 底層發光光束
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.strokeStyle = 'rgba(255, 195, 45, 0.35)';
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowColor = '#ffb300';
+      ctx.shadowBlur = 10;
+      ctx.stroke();
+
+      // 2. 核心流動金光虛線
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      const dashOffset = -(Date.now() / 25) % 36;
+      ctx.setLineDash([16, 14]);
+      ctx.lineDashOffset = dashOffset;
+      ctx.strokeStyle = 'rgba(255, 245, 180, 0.9)';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 3. 計算各線段長度與累計長度，在線段上均勻鋪設地面黃色箭頭
+      const segments = [];
+      let totalLength = 0;
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        segments.push({ p1, p2, len: segLen, angle, startDist: totalLength });
+        totalLength += segLen;
+      }
+
+      const arrowSpacing = 42;
+      const now = Date.now();
+
+      for (let d = 20; d < totalLength - 15; d += arrowSpacing) {
+        const seg = segments.find(s => d >= s.startDist && d <= s.startDist + s.len);
+        if (!seg || seg.len === 0) continue;
+
+        const ratio = (d - seg.startDist) / seg.len;
+        const ax = seg.p1.x + (seg.p2.x - seg.p1.x) * ratio;
+        const ay = seg.p1.y + (seg.p2.y - seg.p1.y) * ratio;
+
+        // 沿路徑傳播的動態光波漣漪
+        const wave = (Math.sin(now / 200 - d * 0.05) + 1) * 0.5;
+
+        ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(seg.angle);
+
+        // 繪製地面扁平箭頭
+        ctx.beginPath();
+        ctx.moveTo(8, 0);
+        ctx.lineTo(-6, -6);
+        ctx.lineTo(-2, 0);
+        ctx.lineTo(-6, 6);
+        ctx.closePath();
+
+        ctx.fillStyle = `rgba(255, 220, 70, ${0.45 + wave * 0.5})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(215, 140, 20, ${0.6 + wave * 0.4})`;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      // 4. 終點目標動態光圈
+      const pulse = (now / 350) % (Math.PI * 2);
+      const rippleT = (now / 700) % 1;
+      const rippleR = 14 + rippleT * 22;
+      const rippleAlpha = 1 - rippleT;
+
+      ctx.beginPath();
+      ctx.ellipse(targetLoc.x, targetLoc.y, rippleR, rippleR * 0.55, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 215, 0, ${rippleAlpha * 0.8})`;
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.ellipse(targetLoc.x, targetLoc.y, 14 + Math.sin(pulse) * 3, (14 + Math.sin(pulse) * 3) * 0.55, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 235, 120, 0.45)';
+      ctx.fill();
+      ctx.strokeStyle = '#ffc83b';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.restore();
+    },
+
+    // 更新左上方單一羅盤箭頭角度 (僅在開啟導航時指示，保持平時乾淨)
     updateNavArrow(player, targetLoc) {
       const pointer = document.getElementById('nav-arrow-pointer');
       if (!pointer) return;
-      if (!targetLoc) {
+      if (!targetLoc || !GameState.navigation.active) {
         pointer.style.display = 'none';
         return;
       }
@@ -2952,63 +3305,9 @@
       }
     },
 
-    // 在主角身周繪製環繞懸浮立體金色指引箭頭 (指向目標交互點)
+    // 已由地面動態光徑 drawNavigationRoute 取代，保留空實作確保向下相容
     drawPlayerNavArrow(ctx, player, targetLoc) {
-      if (!targetLoc || GameState.dialogue.active) return;
-
-      const dx = targetLoc.x - player.x;
-      const dy = targetLoc.y - player.y;
-      const dist = Math.hypot(dx, dy);
-
-      ctx.save();
-      ctx.translate(player.x, player.y - 12);
-
-      // 當距離小於 36px 時，表示已經抵達目標附近，改為腳底金色目標光環
-      if (dist < 36) {
-        const pulse = (Math.sin(Date.now() / 250) + 1) * 0.5;
-        ctx.beginPath();
-        ctx.ellipse(0, 12, 16 + pulse * 4, 7 + pulse * 2, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = '#e8a530';
-        ctx.lineWidth = 2.2;
-        ctx.stroke();
-        ctx.restore();
-        return;
-      }
-
-      const angle = Math.atan2(dy, dx);
-      // 環繞主角半徑（約 34px）並加入微微呼吸浮動
-      const orbitPulse = Math.sin(Date.now() / 200) * 3.5;
-      const arrowR = 34 + orbitPulse;
-
-      const ax = Math.cos(angle) * arrowR;
-      const ay = Math.sin(angle) * arrowR;
-
-      ctx.translate(ax, ay);
-      ctx.rotate(angle);
-
-      // 箭頭發光陰影
-      ctx.shadowColor = 'rgba(240, 180, 50, 0.85)';
-      ctx.shadowBlur = 8;
-
-      // 繪製立體金色尖頭
-      ctx.beginPath();
-      ctx.moveTo(11, 0);          // 箭頭尖端（朝向目標）
-      ctx.lineTo(-4, -6.5);       // 左翼
-      ctx.lineTo(-1.5, 0);        // 凹槽
-      ctx.lineTo(-4, 6.5);        // 右翼
-      ctx.closePath();
-
-      const grad = ctx.createLinearGradient(-4, 0, 11, 0);
-      grad.addColorStop(0, '#f9c846');
-      grad.addColorStop(1, '#fffae0');
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      ctx.strokeStyle = '#b87514';
-      ctx.lineWidth = 1.3;
-      ctx.stroke();
-
-      ctx.restore();
+      // 保持靜態不干擾畫面
     },
 
     // 繪製目標地點淺黃色優雅呼吸光暈 (地面不繪製整排多餘箭頭，保持乾淨)
@@ -3173,7 +3472,7 @@
         ctx.fillRect(0, 0, spec.w, spec.h);
       }
 
-      // 2. 指引目標：地面呼吸光暈與左上方羅盤
+      // 2. 指引目標：地面呼吸光暈與導航路線
       const targetLoc = this.getCurrentTargetLocation();
 
       if (targetLoc) {
@@ -3183,19 +3482,21 @@
         }
       }
 
+      // 當玩家點擊右側面板按鈕開啟地面導航時，繪製流動金色箭頭光徑！
+      if (GameState.navigation.active && targetLoc && !GameState.dialogue.active) {
+        this.drawNavigationRoute(ctx, p, targetLoc);
+      }
+
       // 3. 繪製各場景關鍵劇情 NPC
       const sId = GameState.currentSceneId;
       const q = GameState.quest;
 
       if (sId === 'S3') {
-        // 同學丙 (Day 5 是支持主角的對話目標，其餘時間坐在座位認真自習)
-        const isTargetC = (q.step === 9 && !q.completedNodes.has('node9'));
-        CharacterSpriteRenderer.drawNPC(ctx, 210, 345, 'classmate_c', isTargetC, 'down', 0, '同學丙');
-
-        // 同學甲 (自習課前段時間出現在教室)
-        if (!q.completedNodes.has('node1')) {
-          CharacterSpriteRenderer.drawNPC(ctx, 345, 320, 'classmate_a', false, 'left', 0, '同學甲');
+        // 同學丙：僅在 Day 5 (Node 9 重返校園同儕支持) 時坐在座位上
+        if (q.step === 9 && !q.completedNodes.has('node9')) {
+          CharacterSpriteRenderer.drawNPC(ctx, 210, 345, 'classmate_c', true, 'down', 0, '同學丙');
         }
+        // 第一幕及其他自習時段教室保持靜態，不出現同學甲與同學丙
       }
       else if (sId === 'S4') {
         // Node 2 (飲水機攔截事件)：僅同學甲攔截，絕不提前出現同學乙！
@@ -3304,8 +3605,8 @@
         1.1
       );
 
-      // 6. 在主角身周繪製環繞懸浮立體金色指引箭頭！
-      this.drawPlayerNavArrow(ctx, p, targetLoc);
+      // 6. 原本主角身周環繞懸浮立體箭頭已由右側任務日誌點擊之地圖光徑取代，保持安靜沉浸感
+      // this.drawPlayerNavArrow(ctx, p, targetLoc);
 
       // 7. 疊加全場景動態天色光影、環境氛圍與心理狀態濾鏡！
       AtmosphereRenderer.draw(ctx, spec.w, spec.h, GameState.timeOfDay, GameState.stats);
@@ -3317,6 +3618,11 @@
     // 8. 視覺小說對話系統 (支援心靈小提醒與自主操作節奏)
     // ========================================================================
     triggerNode(nodeId) {
+      // 進入對話時自動關閉地面尋路導航
+      if (GameState.navigation.active) {
+        this.stopNavigation();
+      }
+
       if (this._phoneRingTimer) {
         clearInterval(this._phoneRingTimer);
         this._phoneRingTimer = null;

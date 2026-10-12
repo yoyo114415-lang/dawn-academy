@@ -168,6 +168,34 @@
       <div id="canvas-viewport">
         <canvas id="game-canvas"></canvas>
         <div id="interact-prompt">按 [E] 或 [空白鍵] 互動</div>
+
+        <!-- RPG 任務追蹤面板 (畫面右上角，支援收合/展開與點擊地面尋路導航) -->
+        <div id="quest-tracker-panel" class="quest-tracker-panel">
+          <button id="btn-toggle-quest-panel" class="btn-toggle-quest" title="收合/展開任務日誌">▶</button>
+          <div class="quest-panel-inner">
+            <div class="quest-panel-header">
+              <span class="quest-panel-title">📜 任務日誌・QUEST</span>
+            </div>
+            <div class="quest-main-section">
+              <div class="quest-type-badge">◆ 主線任務</div>
+              <div id="quest-tracker-title" class="quest-tracker-title">【主線一】清晨的惡意紙條</div>
+              <div id="quest-tracker-desc" class="quest-tracker-desc">清晨教室格外寂靜，走回發光的個人座位，查看桌上被惡作劇留下的嘲笑紙條與垃圾。</div>
+              <div class="quest-tracker-meta">
+                <div id="quest-tracker-objective" class="quest-tracker-target">▶ 目標：走向座位並按 [E] 檢查</div>
+                <div id="quest-tracker-location" class="quest-tracker-loc">▶ 地點：S3 班級教室 (發光處)</div>
+              </div>
+              <!-- 點擊開啟地面導航路線按鈕 -->
+              <button id="btn-quest-navigate" class="btn-quest-navigate" title="在地面浮現前往目標的金色導航路徑">
+                <span class="nav-btn-icon">📍</span>
+                <span id="nav-btn-text">點擊開啟地面導航路線</span>
+              </button>
+            </div>
+            <div class="quest-side-section">
+              <div class="quest-side-badge">◇ 支線任務：校園自由探索</div>
+              <div class="quest-side-desc">（目前暫無進行中支線任務）<br>可自由探索校園，或與操場、走廊的路人同學對話交流。</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 行動裝置虛擬按鈕 -->

@@ -1284,3 +1284,183 @@ body {
   cursor: pointer;
 }
 
+/* ==========================================================================
+   RPG 右側任務追蹤日誌面板 (Quest Tracker Panel)
+   ========================================================================== */
+.quest-tracker-panel {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 242px;
+  background: rgba(35, 28, 22, 0.92);
+  border: 2px solid rgba(218, 165, 32, 0.85);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  z-index: 45;
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.25, 1);
+  font-family: 'Microsoft JhengHei', 'Noto Sans TC', sans-serif;
+  user-select: none;
+}
+
+.quest-tracker-panel.collapsed {
+  transform: translateX(252px);
+}
+
+.btn-toggle-quest {
+  position: absolute;
+  left: -28px;
+  top: 14px;
+  width: 28px;
+  height: 38px;
+  background: rgba(45, 36, 28, 0.95);
+  border: 1.5px solid rgba(218, 165, 32, 0.85);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  color: #f7d58b;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
+  box-shadow: -3px 3px 10px rgba(0, 0, 0, 0.35);
+}
+
+.btn-toggle-quest:hover {
+  background: #5a4432;
+  color: #fff;
+}
+
+.quest-panel-inner {
+  padding: 10px 14px 14px 14px;
+}
+
+.quest-panel-header {
+  background: rgba(65, 48, 34, 0.95);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  text-align: center;
+  border: 1px solid rgba(218, 165, 32, 0.35);
+}
+
+.quest-panel-title {
+  color: #ffea9f;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.quest-main-section {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(218, 165, 32, 0.25);
+  border-radius: 8px;
+  padding: 10px 10px;
+  margin-bottom: 10px;
+}
+
+.quest-type-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #ffc83b;
+  background: rgba(220, 130, 20, 0.25);
+  border: 1px solid rgba(255, 200, 60, 0.4);
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.quest-tracker-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffd875;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.quest-tracker-desc {
+  font-size: 11px;
+  color: #e8ded2;
+  line-height: 1.5;
+  margin-bottom: 8px;
+  text-align: justify;
+}
+
+.quest-tracker-meta {
+  font-size: 11px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  border-top: 1px dashed rgba(218, 165, 32, 0.25);
+  padding-top: 6px;
+}
+
+.quest-tracker-target {
+  color: #8ce38c;
+  font-weight: 600;
+}
+
+.quest-tracker-loc {
+  color: #d1b89d;
+  margin-top: 2px;
+}
+
+/* 點擊開啟地面導航路線按鈕 */
+.btn-quest-navigate {
+  width: 100%;
+  padding: 8px 10px;
+  background: linear-gradient(135deg, #d98a2b, #b35e20);
+  border: 1.5px solid #ffe6a0;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 3px 10px rgba(180, 90, 20, 0.4);
+  transition: all 0.2s ease;
+}
+
+.btn-quest-navigate:hover {
+  background: linear-gradient(135deg, #e69635, #c46824);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(217, 138, 43, 0.6);
+}
+
+.btn-quest-navigate.nav-active {
+  background: linear-gradient(135deg, #27ae60, #1e8449);
+  border-color: #a3e4d7;
+  animation: pulseNavBtn 1.8s infinite ease-in-out;
+}
+
+@keyframes pulseNavBtn {
+  0%, 100% { box-shadow: 0 0 8px rgba(39, 174, 96, 0.5); }
+  50% { box-shadow: 0 0 16px rgba(39, 174, 96, 0.85); }
+}
+
+.quest-side-section {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(140, 120, 100, 0.25);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.quest-side-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #bdaea0;
+  margin-bottom: 4px;
+}
+
+.quest-side-desc {
+  font-size: 10.5px;
+  color: #9e8f81;
+  line-height: 1.45;
+}
+
