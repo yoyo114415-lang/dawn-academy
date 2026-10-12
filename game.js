@@ -2955,12 +2955,13 @@
         }, 4200);
       }
 
-      // 切換場景時，自動輕巧發射一波前進光浪指引新場景目標方向 (看完即滅，零殘留)
-      setTimeout(() => {
-        if (!GameState.dialogue.active) {
-          this.triggerGuidanceWave();
-        }
-      }, 320);
+      // 切換場景時：若玩家原已開啟導航模式，維持導航活躍狀態並同步更新按鈕 UI
+      if (GameState.navigation.active && !GameState.dialogue.active) {
+        const btn = document.getElementById('btn-quest-navigate');
+        const text = document.getElementById('nav-btn-text');
+        if (btn) btn.classList.add('nav-active');
+        if (text) text.textContent = '點擊關閉地面導航路線';
+      }
     },
 
     // 世界座標轉螢幕座標 (精確對齊 Contain 全貌縮放視角)
@@ -3088,20 +3089,194 @@
       }, 800);
     },
 
-    // 方案一：發射流動指引光浪 (向目標向前奔流帶路，走過即滅，地面 100% 乾淨零殘留)
-    triggerGuidanceWave() {
+    // 啟動地面尋路導航 (學生沒走時持續保留，走過後立即消失)
+    startNavigation() {
       const targetLoc = this.getCurrentTargetLocation();
       if (!targetLoc) {
         this.showToast('當前區域暫無導航目標');
         return;
       }
 
-      const p = GameState.player;
-      // 獲取從玩家到目標的完整避障走道路徑
-      const points = this.findScenePath({ x: p.x, y: p.y }, targetLoc);
-      if (points.length < 2) return;
+      GameState.navigation.active = true;
+      const btn = document.getElementById('btn-quest-navigate');
+      const text = document.getElementById('nav-btn-text');
+      if (btn) btn.classList.add('nav-active');
+      if (text) text.textContent = '點擊關閉地面導航路線';
+      if (btn) btn.title = '點擊可關閉地面導航光路';
 
-      // 計算各線段與總長度
+      SoundFX.positive();
+      this.showToast('🧭 導航已開啟：跟隨地面指引光波前進！');
+    },
+
+    // 關閉地面導航
+    stopNavigation() {
+      GameState.navigation.active = false;
+      const btn = document.getElementById('btn-quest-navigate');
+      const text = document.getElementById('nav-btn-text');
+      if (btn) btn.classList.remove('nav-active');
+      if (text) text.textContent = '點擊開啟地面導航路線';
+      if (btn) btn.title = '在地面浮現前往目標的金色導航路徑';
+    },
+
+    // 切換地面尋路導航 (點擊開啟 / 關閉)
+    toggleNavigation() {
+      if (GameState.navigation.active) {
+        this.stopNavigation();
+        SoundFX.click();
+      } else {
+        this.startNavigation();
+      }
+    },
+
+    // 拓撲路網前瞻最短路徑搜尋 (Dijkstra + 走過即隱方向鎖定，杜絕逆向回溯與身後殘留)
+    findScenePath(startPos, endPos) {
+      const sId = GameState.currentSceneId;
+      const nodes = this.sceneWaypoints[sId];
+      if (!nodes || nodes.length === 0) {
+        return [startPos, endPos];
+      }
+
+      // 若起點與終點距離極近，直接連線
+      const directDist = Math.hypot(endPos.x - startPos.x, endPos.y - startPos.y);
+      if (directDist <= 32) {
+        return [startPos, endPos];
+      }
+
+      const nodeMap = new Map();
+      nodes.forEach(n => nodeMap.set(n.id, n));
+
+      // 1. 尋找最接近 endPos 的節點作為 endNode
+      let endNode = null;
+      let minEndDist = Infinity;
+      for (const n of nodes) {
+        const d = Math.hypot(n.x - endPos.x, n.y - endPos.y);
+        if (d < minEndDist) {
+          minEndDist = d;
+          endNode = n;
+        }
+      }
+
+      if (!endNode) {
+        return [startPos, endPos];
+      }
+
+      // 2. 建立雙向無向圖鄰接表
+      const adj = new Map();
+      nodes.forEach(n => adj.set(n.id, []));
+      nodes.forEach(n => {
+        if (n.to) {
+          n.to.forEach(tid => {
+            const targetNode = nodeMap.get(tid);
+            if (targetNode) {
+              const d = Math.hypot(n.x - targetNode.x, n.y - targetNode.y);
+              if (!adj.get(n.id).some(e => e.id === tid)) {
+                adj.get(n.id).push({ id: tid, dist: d });
+              }
+              if (adj.has(tid) && !adj.get(tid).some(e => e.id === n.id)) {
+                adj.get(tid).push({ id: n.id, dist: d });
+              }
+            }
+          });
+        }
+      });
+
+      // 3. 從 endNode 反向執行 Dijkstra，計算所有節點到終點的最短距離與後繼節點 nextMap
+      const distToTarget = new Map();
+      const nextMap = new Map();
+      distToTarget.set(endNode.id, 0);
+
+      const pq = [{ id: endNode.id, dist: 0 }];
+      while (pq.length > 0) {
+        pq.sort((a, b) => a.dist - b.dist);
+        const cur = pq.shift();
+        if (cur.dist > distToTarget.get(cur.id)) continue;
+
+        const neighbors = adj.get(cur.id) || [];
+        for (const edge of neighbors) {
+          const newD = cur.dist + edge.dist;
+          if (!distToTarget.has(edge.id) || newD < distToTarget.get(edge.id)) {
+            distToTarget.set(edge.id, newD);
+            nextMap.set(edge.id, cur.id); // 從 edge.id 走向 cur.id 朝終點前進
+            pq.push({ id: edge.id, dist: newD });
+          }
+        }
+      }
+
+      // 4. 尋找與玩家最近的基準節點 nearestStartNode
+      let nearestStartNode = null;
+      let minStartDist = Infinity;
+      for (const n of nodes) {
+        const d = Math.hypot(n.x - startPos.x, n.y - startPos.y);
+        if (d < minStartDist) {
+          minStartDist = d;
+          nearestStartNode = n;
+        }
+      }
+
+      if (!nearestStartNode || !distToTarget.has(nearestStartNode.id)) {
+        return [startPos, endPos];
+      }
+
+      // 候選節點：包含 nearestStartNode 與其相鄰節點（保證不跨越障礙穿牆）
+      const candidateIds = new Set([nearestStartNode.id]);
+      const neighbors = adj.get(nearestStartNode.id) || [];
+      neighbors.forEach(e => candidateIds.add(e.id));
+
+      // 5. 評估 Cost(n) = dist(player, n) + distToTarget(n) 最小者，前進節點勝出！
+      let bestStartNode = nearestStartNode;
+      let minCost = Infinity;
+
+      candidateIds.forEach(cid => {
+        if (!distToTarget.has(cid)) return;
+        const node = nodeMap.get(cid);
+        if (!node) return;
+        const dFromPlayer = Math.hypot(node.x - startPos.x, node.y - startPos.y);
+        const cost = dFromPlayer + distToTarget.get(cid);
+        if (cost < minCost) {
+          minCost = cost;
+          bestStartNode = node;
+        }
+      });
+
+      // 6. 沿著 nextMap 串接通往終點的路徑序列
+      const pathPoints = [];
+      let currId = bestStartNode.id;
+      const visited = new Set();
+      while (currId && !visited.has(currId)) {
+        visited.add(currId);
+        const node = nodeMap.get(currId);
+        if (node) pathPoints.push({ x: node.x, y: node.y });
+        if (currId === endNode.id) break;
+        currId = nextMap.get(currId);
+      }
+
+      // 若玩家已經幾乎與第一個路徑點重合（小於 14px），省略該點避免原地折返抖動
+      if (pathPoints.length > 1) {
+        const dFirst = Math.hypot(pathPoints[0].x - startPos.x, pathPoints[0].y - startPos.y);
+        if (dFirst < 14) {
+          pathPoints.shift();
+        }
+      }
+
+      const points = [startPos, ...pathPoints];
+      // 確保目標點為最後一點
+      const last = points[points.length - 1];
+      if (Math.hypot(last.x - endPos.x, last.y - endPos.y) > 10) {
+        points.push(endPos);
+      }
+
+      return points;
+    },
+
+    // 繪製地面動態指引光波 (學生沒走時持續保留指引，學生走過後身後立即消失不殘留)
+    drawGuidanceWaves(ctx, player, targetLoc) {
+      if (!GameState.navigation.active || !targetLoc || GameState.dialogue.active) return;
+
+      const p = player || GameState.player;
+      const points = this.findScenePath({ x: p.x, y: p.y }, targetLoc);
+      if (!points || points.length < 2) return;
+
+      // 1. 計算各線段與累計總長度
       const segments = [];
       let totalLength = 0;
       for (let i = 0; i < points.length - 1; i++) {
@@ -3113,219 +3288,106 @@
         totalLength += segLen;
       }
 
-      if (totalLength < 18) {
-        this.showToast('您已經在目標地點旁邊囉！按 [E] 進行互動。');
-        return;
-      }
+      // 若玩家已經在目標旁邊（小於 18px），無需繪製箭頭
+      if (totalLength < 18) return;
 
-      SoundFX.positive();
-
-      // 更新按鈕狀態：指引中
-      const btn = document.getElementById('btn-quest-navigate');
-      const text = document.getElementById('nav-btn-text');
-      if (btn) btn.classList.add('nav-active');
-      if (text) text.textContent = '指引光波前進中...';
-
-      // 建立 2 波連續的流動指引光浪（間隔 520ms，每波約 1.2 秒跑完全程）
       const now = performance.now();
-      const waveDuration = Math.min(2200, Math.max(1100, totalLength * 2.2));
+      ctx.save();
 
-      this._guidanceWaves = [
-        {
-          segments,
-          totalLength,
-          startTime: now,
-          duration: waveDuration,
-          waveLen: Math.min(130, totalLength * 0.45)
-        },
-        {
-          segments,
-          totalLength,
-          startTime: now + 520,
-          duration: waveDuration,
-          waveLen: Math.min(130, totalLength * 0.45)
-        }
-      ];
-
-      // 全部光浪跑完後，按鈕自動恢復「點擊開啟地面導航路線」，地面徹底乾淨
-      if (this._navResetTimer) clearTimeout(this._navResetTimer);
-      this._navResetTimer = setTimeout(() => {
-        if (btn) btn.classList.remove('nav-active');
-        if (text) text.textContent = '點擊開啟地面導航路線';
-        this._guidanceWaves = [];
-      }, waveDuration + 650);
-    },
-
-    // 關閉地面導航
-    stopNavigation() {
-      GameState.navigation.active = false;
-      this._guidanceWaves = [];
-      const btn = document.getElementById('btn-quest-navigate');
-      const text = document.getElementById('nav-btn-text');
-      if (btn) btn.classList.remove('nav-active');
-      if (text) text.textContent = '點擊開啟地面導航路線';
-      if (this._navResetTimer) {
-        clearTimeout(this._navResetTimer);
-        this._navResetTimer = null;
+      // 2. 地面柔和金色導引光軌 (淡雅底襯，提示完整可行進走道)
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
       }
-    },
+      ctx.strokeStyle = 'rgba(255, 205, 50, 0.22)';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowColor = '#ffb300';
+      ctx.shadowBlur = 6;
+      ctx.stroke();
 
-    // 切換地面尋路導航
-    toggleNavigation() {
-      this.triggerGuidanceWave();
-    },
-
-    // 拓撲路網最短路徑搜尋 (BFS)
-    findScenePath(startPos, endPos) {
-      const sId = GameState.currentSceneId;
-      const nodes = this.sceneWaypoints[sId];
-      if (!nodes || nodes.length === 0) {
-        return [startPos, endPos];
+      // 核心向前流動虛線微光
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
       }
+      ctx.setLineDash([10, 14]);
+      ctx.lineDashOffset = -(now / 28) % 24;
+      ctx.strokeStyle = 'rgba(255, 240, 160, 0.50)';
+      ctx.lineWidth = 2.0;
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-      let startNode = null;
-      let minStartDist = Infinity;
-      let endNode = null;
-      let minEndDist = Infinity;
+      // 3. 持續流動指引光浪 (循環週期：常保 2 波光浪順暢向前奔流，學生沒走時持續保留)
+      const waveLen = Math.min(130, Math.max(70, totalLength * 0.45));
+      const wavePeriod = Math.min(2400, Math.max(1200, totalLength * 2.0));
+      const waveOffsets = [0, wavePeriod * 0.5];
 
-      for (const n of nodes) {
-        const dStart = Math.hypot(n.x - startPos.x, n.y - startPos.y);
-        if (dStart < minStartDist) {
-          minStartDist = dStart;
-          startNode = n;
-        }
-        const dEnd = Math.hypot(n.x - endPos.x, n.y - endPos.y);
-        if (dEnd < minEndDist) {
-          minEndDist = dEnd;
-          endNode = n;
-        }
-      }
+      // 沿路徑每隔 step = 28px 取樣繪製指向目標的前進小箭頭
+      const step = 28;
+      // 起始點從玩家腳邊微距 (d = 16) 開始，身後已走過的部分完全不包含！
+      for (let d = 16; d <= totalLength - 10; d += step) {
+        const seg = segments.find(s => d >= s.startDist && d <= s.startDist + s.len);
+        if (!seg || seg.len === 0) continue;
 
-      if (!startNode || !endNode) {
-        return [startPos, endPos];
-      }
+        const ratio = (d - seg.startDist) / seg.len;
+        const ax = seg.p1.x + (seg.p2.x - seg.p1.x) * ratio;
+        const ay = seg.p1.y + (seg.p2.y - seg.p1.y) * ratio;
 
-      if (startNode.id === endNode.id) {
-        return [startPos, { x: startNode.x, y: startNode.y }, endPos];
-      }
-
-      const nodeMap = new Map();
-      nodes.forEach(n => nodeMap.set(n.id, n));
-
-      const queue = [startNode.id];
-      const visited = new Set([startNode.id]);
-      const prev = new Map();
-
-      let found = false;
-      while (queue.length > 0) {
-        const curId = queue.shift();
-        if (curId === endNode.id) {
-          found = true;
-          break;
-        }
-        const curNode = nodeMap.get(curId);
-        if (curNode && curNode.to) {
-          for (const nextId of curNode.to) {
-            if (!visited.has(nextId)) {
-              visited.add(nextId);
-              prev.set(nextId, curId);
-              queue.push(nextId);
-            }
+        // 計算兩波光浪疊加的亮度強度 (0.0 ~ 1.0)
+        let waveIntensity = 0;
+        waveOffsets.forEach(offset => {
+          const progress = ((now + offset) % wavePeriod) / wavePeriod;
+          const headDist = progress * (totalLength + waveLen);
+          const tailDist = headDist - waveLen;
+          if (d >= tailDist && d <= headDist) {
+            const distFromTail = d - tailDist;
+            const intensity = Math.sin((distFromTail / waveLen) * Math.PI);
+            if (intensity > waveIntensity) waveIntensity = intensity;
           }
-        }
-      }
+        });
 
-      if (!found) {
-        return [startPos, endPos];
-      }
-
-      const pathIds = [];
-      let curr = endNode.id;
-      while (curr) {
-        pathIds.unshift(curr);
-        curr = prev.get(curr);
-      }
-
-      const points = [startPos];
-      for (const id of pathIds) {
-        const n = nodeMap.get(id);
-        if (n) points.push({ x: n.x, y: n.y });
-      }
-      points.push(endPos);
-
-      return points;
-    },
-
-    // 方案一：繪製向前奔馳的流動指引光浪 (跑過即滅，身後地面 100% 乾淨零殘留)
-    drawGuidanceWaves(ctx) {
-      if (!this._guidanceWaves || this._guidanceWaves.length === 0 || GameState.dialogue.active) return;
-      const now = performance.now();
-
-      this._guidanceWaves.forEach(wave => {
-        const elapsed = now - wave.startTime;
-        if (elapsed < 0 || elapsed > wave.duration) return;
-
-        const progress = elapsed / wave.duration; // 0.0 ~ 1.0
-        // 光浪頭部位置：從 0 推進到 totalLength + waveLen
-        const headDist = progress * (wave.totalLength + wave.waveLen);
-        const tailDist = headDist - wave.waveLen;
-
-        const segments = wave.segments;
-        const totalLen = wave.totalLength;
-
-        // 在 [tailDist, headDist] 範圍內取樣繪製靈巧小箭頭與光點 (身後已走過的路段完全不繪製)
-        const step = 26; // 每隔 26px 一個小箭頭
-        const startD = Math.max(0, Math.floor(tailDist / step) * step);
-        const endD = Math.min(totalLen, headDist);
+        // 基礎常駐能見度 0.28，光浪經過時飽和提升至 0.95
+        const alpha = 0.28 + 0.67 * waveIntensity;
 
         ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(seg.angle);
 
-        for (let d = startD; d <= endD; d += step) {
-          if (d < 4 || d > totalLen - 4) continue;
-          const seg = segments.find(s => d >= s.startDist && d <= s.startDist + s.len);
-          if (!seg || seg.len === 0) continue;
+        // 1. 箭頭背後的小金光暈 (光浪經過時加強)
+        ctx.beginPath();
+        ctx.arc(0, 0, 7 + waveIntensity * 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 215, 0, ${0.28 * alpha})`;
+        ctx.fill();
 
-          const ratio = (d - seg.startDist) / seg.len;
-          const ax = seg.p1.x + (seg.p2.x - seg.p1.x) * ratio;
-          const ay = seg.p1.y + (seg.p2.y - seg.p1.y) * ratio;
+        // 2. 扁平金色向前游動的小箭頭 (指針朝向正前方)
+        ctx.beginPath();
+        ctx.moveTo(6.5, 0);
+        ctx.lineTo(-4.5, -4.5);
+        ctx.lineTo(-1.5, 0);
+        ctx.lineTo(-4.5, 4.5);
+        ctx.closePath();
 
-          // 計算在當前光浪中的透明度包絡：越靠近頭部越亮，尾部漸隱至 0
-          const distFromTail = d - tailDist;
-          const alphaWave = Math.max(0, Math.min(1, distFromTail / wave.waveLen));
-          if (alphaWave <= 0.05) continue;
+        ctx.fillStyle = `rgba(255, 235, 90, ${0.92 * alpha})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(215, 145, 25, ${0.85 * alpha})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
-          ctx.save();
-          ctx.translate(ax, ay);
-          ctx.rotate(seg.angle);
+        ctx.restore();
+      }
 
-          // 1. 箭頭背後的小金光暈
-          ctx.beginPath();
-          ctx.arc(0, 0, 8, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255, 215, 0, ${0.3 * alphaWave})`;
-          ctx.fill();
-
-          // 2. 扁平金色向前游動的小箭頭
-          ctx.beginPath();
-          ctx.moveTo(6.5, 0);
-          ctx.lineTo(-4.5, -4.5);
-          ctx.lineTo(-1.5, 0);
-          ctx.lineTo(-4.5, 4.5);
-          ctx.closePath();
-
-          ctx.fillStyle = `rgba(255, 235, 90, ${0.92 * alphaWave})`;
-          ctx.fill();
-          ctx.strokeStyle = `rgba(215, 145, 25, ${0.85 * alphaWave})`;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-
-          ctx.restore();
-        }
-
-        // 光浪到達終點時的散開光環
-        if (headDist >= totalLen - 20) {
-          const arrRatio = Math.min(1, (headDist - (totalLen - 20)) / (wave.waveLen + 20));
-          const r = 10 + arrRatio * 22;
-          const alphaR = (1 - arrRatio) * 0.8;
+      // 4. 光浪抵達終點時散開的漣漪光環
+      waveOffsets.forEach(offset => {
+        const progress = ((now + offset) % wavePeriod) / wavePeriod;
+        const headDist = progress * (totalLength + waveLen);
+        if (headDist >= totalLength - 20) {
+          const arrRatio = Math.min(1, (headDist - (totalLength - 20)) / (waveLen + 20));
+          const r = 10 + arrRatio * 20;
+          const alphaR = (1 - arrRatio) * 0.75;
           const endPt = segments[segments.length - 1].p2;
 
           ctx.beginPath();
@@ -3334,14 +3396,14 @@
           ctx.lineWidth = 2;
           ctx.stroke();
         }
-
-        ctx.restore();
       });
+
+      ctx.restore();
     },
 
     // 向下相容空函式
     drawNavigationRoute(ctx, player, targetLoc) {
-      this.drawGuidanceWaves(ctx);
+      this.drawGuidanceWaves(ctx, player, targetLoc);
     },
 
     // 更新左上方單一羅盤箭頭角度 (僅在開啟導航時指示，保持平時乾淨)
@@ -3547,8 +3609,10 @@
         }
       }
 
-      // 繪製方案一：向前奔馳的流動指引光浪 (跑過即滅，身後地面 100% 乾淨零殘留)
-      this.drawGuidanceWaves(ctx);
+      // 繪製地面動態指引光波 (學生沒走時持續保留指引，學生走過後身後立即消失不殘留)
+      if (GameState.navigation.active && targetLoc && !GameState.dialogue.active) {
+        this.drawGuidanceWaves(ctx, p, targetLoc);
+      }
 
       // 3. 繪製各場景關鍵劇情 NPC
       const sId = GameState.currentSceneId;
