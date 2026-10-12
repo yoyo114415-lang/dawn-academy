@@ -2599,7 +2599,10 @@
       }));
 
       this.startDialogueSequence(lines, () => {
-        this.showToast('前情提要結束。請依地面淺黃箭頭指引，走到座位查看。');
+        this.showToast('前情提要結束。請走回座位查看桌上的嘲笑紙條。');
+        setTimeout(() => {
+          this.playQuestPanelTutorial();
+        }, 600);
       });
     },
 
@@ -3029,11 +3032,48 @@
     toggleQuestPanel() {
       const panel = document.getElementById('quest-tracker-panel');
       const btn = document.getElementById('btn-toggle-quest-panel');
+      const tooltip = document.getElementById('quest-toggle-tooltip');
       if (!panel || !btn) return;
       const isCollapsed = panel.classList.toggle('collapsed');
       btn.textContent = isCollapsed ? '◀' : '▶';
       btn.title = isCollapsed ? '展開任務日誌' : '收合任務日誌';
+      if (btn.classList.contains('pulse-hint')) btn.classList.remove('pulse-hint');
+      if (tooltip) tooltip.classList.remove('visible');
       SoundFX.click();
+    },
+
+    // 新手教學：引導玩家認識任務日誌收合功能 (自動平滑演練一次)
+    playQuestPanelTutorial() {
+      const panel = document.getElementById('quest-tracker-panel');
+      const btn = document.getElementById('btn-toggle-quest-panel');
+      const tooltip = document.getElementById('quest-toggle-tooltip');
+      if (!panel || !btn) return;
+
+      // 1. 啟用按鈕金色高亮呼吸光圈與指示氣泡
+      btn.classList.add('pulse-hint');
+      if (tooltip) tooltip.classList.add('visible');
+
+      // 2. 0.8 秒後自動示範平滑收合
+      setTimeout(() => {
+        panel.classList.add('collapsed');
+        btn.textContent = '◀';
+        btn.title = '展開任務日誌';
+
+        // 3. 停留 1.3 秒後自動展開回原狀
+        setTimeout(() => {
+          panel.classList.remove('collapsed');
+          btn.textContent = '▶';
+          btn.title = '收合任務日誌';
+
+          this.showToast('💡 小提示：點擊右側 ◀ / ▶ 按鈕可自由收合／展開任務日誌！');
+
+          // 4. 4 秒後平滑淡出提示氣泡與呼吸光圈
+          setTimeout(() => {
+            btn.classList.remove('pulse-hint');
+            if (tooltip) tooltip.classList.remove('visible');
+          }, 4000);
+        }, 1300);
+      }, 800);
     },
 
     // 啟動地面尋路導航
