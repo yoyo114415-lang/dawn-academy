@@ -4479,35 +4479,239 @@
     // 10. 五維心靈成長雷達圖與結算系統 (雙層正五角形對比、即時預覽不卡死、平滑重開)
     // ========================================================================
 
+    // ========================================================================
+    // 依據五維心理數值動態推導 15 種深度心靈評語、專屬稱號與心靈給力站
+    // ========================================================================
+    getDetailedEndingEvaluation(s) {
+      const relaxed = Math.max(0, Math.min(100, 100 - s.stress));
+      const overall = Math.round((relaxed + s.peer + s.courage + s.safety + s.selfEsteem) / 5);
+
+      const arr = [relaxed, s.peer, s.courage, s.safety, s.selfEsteem];
+      const maxVal = Math.max(...arr);
+      const minVal = Math.min(...arr);
+
+      // 第一大類：破曉晴空型 (整體狀態值 >= 60 分・全面蛻變)
+      if (overall >= 60) {
+        // 5. 全維卓越型 (各指標均衡且均 >= 55，最大與最小差距 <= 15)
+        if (minVal >= 55 && (maxVal - minVal) <= 15) {
+          return {
+            tier: '破曉',
+            badge: `🏆 評估完成・陽光破曉 ｜ 綜合評價：${overall} 分 ｜ 晨曦破曉者・全維心靈典範`,
+            title: '陽光破曉：走出陰霾',
+            insight: '這是一場無懈可擊的心靈成長旅程！你兼具面對問題的勇氣、接納善意的胸襟、堅定不移的自尊，以及調節情緒的成熟度。這場考驗沒有打倒你，反而讓你提早磨練出能迎向未來一切挑戰的完整人格防護傘。',
+            tip: '你已經完整破曉！在現實生活裡，你完全具備成為反霸凌友善大使的潛力。請記得這段破曉時分的感動，把這份正向力量傳遞給每一個需要溫暖的人。'
+          };
+        }
+        // 2. 內在自尊型 (自尊最突出且 >= 62)
+        if (s.selfEsteem === maxVal && s.selfEsteem >= 62) {
+          return {
+            tier: '破曉',
+            badge: `🏆 評估完成・陽光破曉 ｜ 綜合評價：${overall} 分 ｜ 晨曦的領航員・自信之光`,
+            title: '陽光破曉：自尊自重',
+            insight: '在排擠與冷言冷語的風浪中，你的內心就像一座堅固的燈塔，始終堅守著自我價值。你深刻體會到：「照規定做事沒有錯，錯的是惡意欺負人的行為。」你沒有讓別人的不成熟言行貶低自己，展現了強韌的心理免疫力。',
+            tip: '強大的自我肯定能保護你免於自責。記得，在展現堅定的同時，也允許身旁關心你的人分擔你的感受，讓愛你的師長與家人能與你並肩作戰。'
+          };
+        }
+        // 3. 溫暖修復型 (同儕關係最突出且 >= 62)
+        if (s.peer === maxVal && s.peer >= 62) {
+          return {
+            tier: '破曉',
+            badge: `🏆 評估完成・陽光破曉 ｜ 綜合評價：${overall} 分 ｜ 晴朗的同行者・友善之橋`,
+            title: '陽光破曉：重啟信任',
+            insight: '受過傷的心靈往往容易築起高牆，但你卻展現了極其難得的柔軟與寬容。面對同學丙真誠的筆記與問候，你選擇放下戒備、重新建立連結。你學會了分清「個別同學的惡意」與「多數同儕的善意」，成功將陰霾轉化為溫暖的陽光。',
+            tip: '願意再次相信朋友，是極具力量的選擇。維持這份溫暖，同時別忘了保留健康的個人界線，讓每段友誼都在彼此尊重中滋養成長。'
+          };
+        }
+        // 1. 智慧求助型 (勇氣與安全感均高)
+        if (s.courage >= 58 && s.safety >= 52) {
+          return {
+            tier: '破曉',
+            badge: `🏆 評估完成・陽光破曉 ｜ 綜合評價：${overall} 分 ｜ 破曉的守護者・正義之盾`,
+            title: '陽光破曉：智慧求助',
+            insight: '你在面對惡意嘲弄與威脅時，展現了極為成熟的清醒與從容。你沒有落入情緒對抗的陷阱，而是果斷留下照片證據，並第一時間讓媽媽、導師與學務處介入。能把體制與信任大人化為自己的堅強防護網，這份「帶著智慧的勇敢」，是你一生中最寶貴的護身符。',
+            tip: '你的冷靜示範了面對不公義時的最佳解方。未來在班級或生活中，當你看到其他人遭遇孤立時，請繼續發揮這股力量，成為那個願意伸出援手的主動守護者。'
+          };
+        }
+        // 4. 沉著調節型 (放鬆度最突出)
+        return {
+          tier: '破曉',
+          badge: `🏆 評估完成・陽光破曉 ｜ 綜合評價：${overall} 分 ｜ 平靜的行者・心靈綠洲`,
+          title: '陽光破曉：身心安穩',
+          insight: '面對風暴，你展現了令人驚豔的身心調節能力。無論是在輔導室還是家裡的沙發旁，你都能透過深呼吸穩住心跳，不讓焦慮與委屈在體內發酵。因為你深信背後有安穩的支持，所以能以最平穩的步伐走出困境。',
+          tip: '維持內在的平靜是你最大的天賦。當身邊的人因為衝突而心慌意亂時，你的從容與定靜，將會是同儕群體中最安定的力量。'
+        };
+      }
+
+      // 第二大類：曙光初現型 (整體狀態值 45 ~ 59 分・穩健調適)
+      if (overall >= 45) {
+        // 6. 孤勇前行型 (勇氣高，但同儕或安全感較低)
+        if (s.courage >= 50 && (s.peer <= 40 || s.safety <= 40)) {
+          return {
+            tier: '曙光',
+            badge: `🌱 評估完成・曙光初現 ｜ 綜合評價：${overall} 分 ｜ 破霧的先鋒・堅毅之劍`,
+            title: '曙光初現：孤勇前行',
+            insight: '你非常有骨氣與正義感，在面對霸凌時敢於表明立場、不畏懼威脅。然而，你習慣了一個人咬牙苦撐，對學校體制與同儕仍帶有一層防衛心，甚至有時會不自覺地把求助當成示弱。',
+            tip: '真正的勇敢，不代表凡事都必須單打獨鬥。適時向值得信任的師長伸出手，不是認輸，而是聰明地借用體制力量來保護自己。'
+          };
+        }
+        // 7. 渴望被愛型 (同儕較高，但自尊偏低)
+        if (s.peer >= 45 && s.selfEsteem <= 35) {
+          return {
+            tier: '曙光',
+            badge: `🌱 評估完成・曙光初現 ｜ 綜合評價：${overall} 分 ｜ 尋光的旅人・溫柔之星`,
+            title: '曙光初現：溫柔尋光',
+            insight: '你非常重視人際和諧，總希望班級氣氛能好起來，甚至寧可委屈自己也不想打破關係。但也正因如此，在遭遇排擠時，你最容易偷偷懷疑是不是自己不夠討人喜歡。',
+            tip: '你的善良與體貼是優點，但不需要靠卑微討好來換取友誼。請深深記住：真正值得交往的朋友，會欣賞原本的你，而不是只喜歡百依百順的你。'
+          };
+        }
+        // 8. 隱忍負重型 (壓力偏高 >= 55)
+        if (s.stress >= 55) {
+          return {
+            tier: '曙光',
+            badge: `🌱 評估完成・曙光初現 ｜ 綜合評價：${overall} 分 ｜ 負重的行者・堅韌之盾`,
+            title: '曙光初現：卸下重擔',
+            insight: '你是一個非常有責任感且堅強的孩子，即使心裡七上八下、緊繃難耐，依然一步一腳印地完成了所有求助流程。這份堅持非常了不起，但你的身體與心靈，其實已經默默承擔了太多重量。',
+            tip: '事情已經告一段落，現在是你好好卸下防備的時候了。多給自己一點時間發呆、聽音樂，難受時別忘了再做幾次 4-6 深呼吸，好好跟辛苦的自己說聲謝謝。'
+          };
+        }
+        // 9. 自我防衛型 (自尊尚可，但同儕封閉 <= 35)
+        if (s.peer <= 35 && s.selfEsteem >= 40) {
+          return {
+            tier: '曙光',
+            badge: `🌱 評估完成・曙光初現 ｜ 綜合評價：${overall} 分 ｜ 築心的高牆者・冷靜之石`,
+            title: '曙光初現：守護心靈',
+            insight: '在受到傷害之後，你迅速築起了一座保護自尊的心牆。你對同學抱持高度戒心，甚至在同學丙釋出善意時，你寧願選擇獨來獨往。這是一種本能的心理自我保護機制，沒有對錯。',
+            tip: '受傷後保持距離完全是合情合理的。不用強迫自己立刻融入團體，給自己一個安全的情感緩衝區，等信任慢慢修復，再讓溫暖的光線透進心牆。'
+          };
+        }
+        // 10. 依賴安心型 (安全感高，勇氣偏低)
+        if (s.safety >= 50 && s.courage <= 40) {
+          return {
+            tier: '曙光',
+            badge: `🌱 評估完成・曙光初現 ｜ 綜合評價：${overall} 分 ｜ 港灣的避風者・純真之羽`,
+            title: '曙光初現：尋得港灣',
+            insight: '你很幸運地擁有值得信賴的媽媽與輔導老師，你願意在遇到困難時投奔避風港。然而，在面對同儕第一線的衝突時，你往往容易慌亂退縮，不敢第一時間堅定表達自己的拒絕界線。',
+            tip: '有了大人的支持作為後盾，下一次你可以試著更堅定地看著對方的眼睛說：「請你停止，我不喜歡這樣。」你會發現，自己的聲音其實很有力量。'
+          };
+        }
+        // 11. 平衡中庸型 (預設曙光)
+        return {
+          tier: '曙光',
+          badge: `🌱 評估完成・曙光初現 ｜ 綜合評價：${overall} 分 ｜ 踏光的前行者・踏實之印`,
+          title: '曙光初現：邁向希望',
+          insight: '面對校園中的突發風暴，你以非常平穩踏實的步調處理每一個難題。你既沒有衝動生事，也沒有完全退縮隱忍，而是在摸索中找到了讓自己漸漸安全的平衡點。',
+          tip: '天邊的第一道曙光已經破雲而出。維持這份節奏，隨著時間與經驗累積，你會越來越清楚如何守護自己的權益與尊嚴。'
+        };
+      }
+
+      // 第三大類：破曉微光型 (整體狀態值 < 45 分・深層接納)
+      // 12. 自責壓抑型 (自尊最低且壓力大)
+      if (s.selfEsteem === minVal && s.stress >= 50) {
+        return {
+          tier: '微光',
+          badge: `🕯️ 評估完成・破曉微光 ｜ 綜合評價：${overall} 分 ｜ 風雨中的堅持者・微光星火`,
+          title: '破曉微光：打破自責',
+          insight: '這段經歷一定讓你感到無比痛苦與委屈。在遭遇嘲弄與孤立時，你的內心反覆懷疑是不是自己做錯了什麼。你承受了超乎常人的心理煎熬，卻依然咬著牙走到了最後。',
+          tip: '請抬起頭，看著這句話：被排擠或霸凌，絕對不是你的錯！錯的是欺凌別人的行為。你不需要為了別人的惡意而懲罰自己，輔導老師與家人隨時準備好抱抱受傷的你。'
+        };
+      }
+      // 14. 恐懼猶豫型 (勇氣最低且壓力大)
+      if (s.courage === minVal && s.stress >= 50) {
+        return {
+          tier: '微光',
+          badge: `🕯️ 評估完成・破曉微光 ｜ 綜合評價：${overall} 分 ｜ 黑暗中摸索的雛鳥・勇氣萌芽`,
+          title: '破曉微光：萌生勇氣',
+          insight: '面對同學的威脅，恐懼一度佔據了你整個心靈。你害怕把事情鬧大、害怕被報復，每一次選擇都讓你感到猶豫與顫抖。這種恐懼是人的本能，絲毫不用感到羞愧。',
+          tip: '即使雙腳顫抖，你最終依然沒有放棄求助，並一路走到了校門口。這證明了你心底那份不向恐懼低頭的生命力。請給自己一個大大的掌聲，你比自己想像的更堅強。'
+        };
+      }
+      // 13. 孤立無助型 (同儕或安全感最低)
+      if (s.peer === minVal || s.safety === minVal) {
+        return {
+          tier: '微光',
+          badge: `🕯️ 評估完成・破曉微光 ｜ 綜合評價：${overall} 分 ｜ 尋找港灣的迷途者・堅韌之苗`,
+          title: '破曉微光：找尋依靠',
+          insight: '在你的感受中，學校的走廊是冰冷的，似乎沒有人真正理解你的委屈，連找大人求助都讓你感到猶豫與不信任。這種「全世界只剩自己一人」的孤獨感，是最沉重的負擔。',
+          tip: '請相信，世界比眼前的人際圈大得多。如果身邊找不到能說話的人，教育部 24 小時反霸凌專線 1953、安心專線 1925 永遠有專業的師長在傾聽你。你真的不必一個人扛。'
+        };
+      }
+      // 15. 微光啟程型 (預設微光)
+      return {
+        tier: '微光',
+        badge: `🕯️ 評估完成・破曉微光 ｜ 綜合評價：${overall} 分 ｜ 穿越長夜的破冰者・生命初曉`,
+        title: '破曉微光：勇氣的起點',
+        insight: '雖然天空還帶著寒意、天色依然昏暗，但最艱難的長夜已經被你跨越了。你用真實的腳步證明：只要不放棄向前走，任何人都能走出那段讓人窒息的陰霾。',
+        tip: '天亮之前總是最冷的。今天這段冒險只是一次演練，在現實生活中，隨時撥打 1953 專線或告訴你最信賴的長輩，他們一定會陪你迎來真正的破曉日出。'
+      };
+    },
+
     // 預覽五維心靈成長雷達圖 (遊玩中隨時點擊 🏆 預覽，不卡死，可隨時返回遊戲)
     openRadarModal() {
       const s = GameState.stats;
-      const formula = (s.courage + s.safety + s.selfEsteem) - s.stress;
 
       // 切換至結算/雷達圖面板
       this.switchScreen('ending');
 
       const isCompleted = GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10;
+      const evalRes = isCompleted ? this.getDetailedEndingEvaluation(s) : null;
 
       const badgeEl = document.getElementById('ending-badge');
       if (badgeEl) {
-        if (isCompleted) {
-          badgeEl.textContent = `🏆 評估完成・陽光破曉 ｜ 綜合評價積分：${formula} ｜ 最終壓力值：${s.stress}`;
+        if (isCompleted && evalRes) {
+          badgeEl.textContent = evalRes.badge;
         } else {
-          badgeEl.textContent = `📊 五維心理狀態檢視（旅程進行中・Day ${GameState.day}）｜ 當前壓力值：${s.stress}`;
+          badgeEl.textContent = `📊 五維心理狀態檢視（旅程進行中・Day ${GameState.day}）｜ 當前整體狀態值：${GameState.getOverallScore()} 分`;
         }
       }
 
       const titleEl = document.getElementById('ending-title');
       if (titleEl) {
-        titleEl.textContent = isCompleted ? '陽光破曉：走出陰霾' : '心靈羅盤：五維成長檢視';
+        titleEl.textContent = isCompleted && evalRes ? evalRes.title : '心靈羅盤：五維成長檢視';
       }
 
       const storyEl = document.getElementById('ending-story');
       if (storyEl) {
-        storyEl.textContent = isCompleted
-          ? '你在面對同儕困境時展現了勇氣，尋求值得信任的師長支援，重獲安全感與人際信任。'
-          : `當前主線進度：${GameState.quest.text}。你可以隨時點擊下方「返回遊戲繼續旅程」回到校園中操作！`;
+        storyEl.textContent = ''; // 清空原有內容以原生 DOM 安全建構
+        if (isCompleted && evalRes) {
+          // 深度心靈解析主文
+          const insightP = document.createElement('p');
+          insightP.style.margin = '0 0 14px 0';
+          insightP.style.lineHeight = '1.8';
+          insightP.textContent = evalRes.insight;
+          storyEl.appendChild(insightP);
+
+          // 專屬心靈給力站小卡片 (高雅溫暖邊框，提升可讀性與深度)
+          const tipBox = document.createElement('div');
+          tipBox.style.padding = '12px 16px';
+          tipBox.style.background = 'rgba(212, 155, 45, 0.08)';
+          tipBox.style.borderLeft = '4px solid #d49b2d';
+          tipBox.style.borderRadius = '8px';
+          tipBox.style.fontSize = '14px';
+          tipBox.style.lineHeight = '1.7';
+          tipBox.style.color = '#5a3d0b';
+
+          const tipTitle = document.createElement('strong');
+          tipTitle.textContent = '💡 心靈給力站：';
+          tipBox.appendChild(tipTitle);
+
+          const tipText = document.createTextNode(evalRes.tip);
+          tipBox.appendChild(tipText);
+
+          storyEl.appendChild(tipBox);
+        } else {
+          const guideP = document.createElement('p');
+          guideP.style.margin = '0 0 8px 0';
+          guideP.style.lineHeight = '1.8';
+          guideP.textContent = `當前主線進度：${GameState.quest.text}`;
+          storyEl.appendChild(guideP);
+
+          const backNotice = document.createElement('p');
+          backNotice.style.margin = '0';
+          backNotice.style.fontSize = '14px';
+          backNotice.style.color = 'var(--text-sub)';
+          backNotice.textContent = '你可以隨時點擊下方「返回遊戲繼續旅程」回到校園中操作！';
+          storyEl.appendChild(backNotice);
+        }
       }
 
       // 動態注入五維數值條到 #ending-stats-breakdown
