@@ -3521,9 +3521,47 @@
       }
     },
 
-    // 已由地面動態光徑 drawNavigationRoute 取代，保留空實作確保向下相容
-    drawPlayerNavArrow(ctx, player, targetLoc) {
-      // 保持靜態不干擾畫面
+    // 繪製玩家角色頭頂黃色倒三角形指示標記 (提示玩家目前操控的角色)
+    drawPlayerIndicator(ctx, player) {
+      if (!player) return;
+      if (GameState.dialogue && GameState.dialogue.active) return;
+
+      const px = player.x;
+      const py = player.y;
+
+      // 角色身高縮放 1.1，頭頂約在 py - 48 處；在 py - 54 處上下柔和浮動
+      const now = performance.now();
+      const floatOffset = Math.sin(now / 220) * 3.5;
+      const tipY = py - 54 + floatOffset;
+
+      ctx.save();
+      ctx.translate(px, tipY);
+
+      // 倒三角形 (頂點朝下指著主角頭部)：下尖端 (0, 0)，左上 (-7.5, -11.5)，右上 (7.5, -11.5)
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-7.5, -11.5);
+      ctx.lineTo(7.5, -11.5);
+      ctx.closePath();
+
+      // 金黃立體漸層
+      const grad = ctx.createLinearGradient(0, -11.5, 0, 0);
+      grad.addColorStop(0, '#fff475');
+      grad.addColorStop(1, '#f1c40f');
+
+      // 柔和金光光暈
+      ctx.shadowColor = 'rgba(240, 180, 20, 0.75)';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // 鮮明深琥珀描邊
+      ctx.strokeStyle = '#7c4a00';
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      ctx.restore();
     },
 
     // 繪製目標地點淺黃色優雅呼吸光暈 (地面不繪製整排多餘箭頭，保持乾淨)
@@ -3821,8 +3859,8 @@
         1.1
       );
 
-      // 6. 原本主角身周環繞懸浮立體箭頭已由右側任務日誌點擊之地圖光徑取代，保持安靜沉浸感
-      // this.drawPlayerNavArrow(ctx, p, targetLoc);
+      // 6. 玩家角色頭頂黃色倒三角形指示標記 (提示玩家目前操控的角色)
+      this.drawPlayerIndicator(ctx, p);
 
       // 7. 疊加全場景動態天色光影、環境氛圍與心理狀態濾鏡！
       AtmosphereRenderer.draw(ctx, spec.w, spec.h, GameState.timeOfDay, GameState.stats);
