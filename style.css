@@ -441,24 +441,24 @@ body {
 
 .hud-stats-group {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   flex: 1;
   justify-content: center;
-  max-width: 770px;
+  max-width: 780px;
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-width: 110px;
+  min-width: 105px;
 }
 
 .stat-item-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   font-size: 12.5px;
   font-weight: 700;
   margin-bottom: 4px;
@@ -483,33 +483,54 @@ body {
   letter-spacing: 0.2px;
 }
 
-/* 增減數值 2 秒浮動標籤 */
+/* 增減數值浮動標籤 (調大字體至 14px，加入立體彈出動態) */
 .stat-delta {
   display: inline-block;
-  font-size: 11.5px;
-  font-weight: 800;
-  margin-left: 4px;
+  font-size: 14px;
+  font-weight: 900;
+  margin-left: 5px;
   opacity: 0;
-  transform: translateY(3px);
-  transition: opacity 0.3s ease, transform 0.3s ease;
-  border-radius: 4px;
-  padding: 1px 4px;
+  transform: translateY(3px) scale(0.9);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  border-radius: 5px;
+  padding: 1.5px 6px;
   line-height: 1.2;
+  font-family: 'Consolas', 'Roboto Mono', 'Microsoft JhengHei', sans-serif;
+  letter-spacing: 0.3px;
 }
 
 .stat-delta.visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
+  animation: deltaPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes deltaPop {
+  0% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.75);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .stat-delta.pos {
-  color: #2e7d32;
-  background: #e8f5e9;
+  color: #1b5e20;
+  background: #d4edda;
+  border: 1px solid #81c784;
+  box-shadow: 0 1px 4px rgba(46, 125, 50, 0.2);
 }
 
 .stat-delta.neg {
-  color: #c62828;
-  background: #ffebee;
+  color: #b71c1c;
+  background: #f8d7da;
+  border: 1px solid #e57373;
+  box-shadow: 0 1px 4px rgba(198, 40, 40, 0.2);
 }
 
 .stat-bar-track {
