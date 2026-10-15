@@ -306,6 +306,14 @@
               <canvas id="ending-radar-chart" width="380" height="320"></canvas>
               <div class="radar-legend-text">✦ 綜合各指標數值繪製（放鬆度為 100 - 壓力值），呈現面對挑戰的心靈防護傘</div>
             </div>
+
+            <!-- 每日心情手札 (五天橫向心靈時間軸) -->
+            <div class="ending-mood-card">
+              <div class="ending-section-title" style="margin-bottom: 12px; font-size: 16px;">📅 每日心情手札（五天心靈歷程）</div>
+              <div id="ending-mood-timeline" class="ending-mood-timeline">
+                <!-- 動態注入 5 天橫排表情與天數 -->
+              </div>
+            </div>
           </div>
         </div>
 
@@ -349,10 +357,49 @@
       </div>
     </div>
 
+    <!-- 8. 每日放學轉場心情札記選擇 Modal (六宮格・上3下3去背表情) -->
+    <div id="modal-mood-checkin" class="modal-backdrop">
+      <div class="mood-checkin-card">
+        <div class="mood-checkin-header">
+          <span id="mood-checkin-badge" class="mood-checkin-badge">第一天・心靈沉澱</span>
+          <h2 id="mood-checkin-title" class="mood-checkin-title">🌱 今天結束了・今天的心情是什麼呢？</h2>
+          <p id="mood-checkin-desc" class="mood-checkin-desc">玩完今天的這段經歷，請點選一個最符合你今天感受的表情：</p>
+        </div>
+
+        <div id="mood-options-grid" class="mood-options-grid">
+          <!-- 上排 3 個 + 下排 3 個去背表情按鈕 -->
+          <button class="mood-btn" data-mood="sad" type="button" title="難過委屈">
+            <img src="圖片/表情/mood_sad.png" alt="難過委屈" class="mood-btn-img" />
+            <span class="mood-btn-name">難過委屈</span>
+          </button>
+          <button class="mood-btn" data-mood="anxious" type="button" title="緊張害怕">
+            <img src="圖片/表情/mood_anxious.png" alt="緊張害怕" class="mood-btn-img" />
+            <span class="mood-btn-name">緊張害怕</span>
+          </button>
+          <button class="mood-btn" data-mood="confused" type="button" title="有些迷茫">
+            <img src="圖片/表情/mood_confused.png" alt="有些迷茫" class="mood-btn-img" />
+            <span class="mood-btn-name">有些迷茫</span>
+          </button>
+          <button class="mood-btn" data-mood="relieved" type="button" title="感到安心">
+            <img src="圖片/表情/mood_relieved.png" alt="感到安心" class="mood-btn-img" />
+            <span class="mood-btn-name">感到安心</span>
+          </button>
+          <button class="mood-btn" data-mood="warm" type="button" title="溫暖釋懷">
+            <img src="圖片/表情/mood_warm.png" alt="溫暖釋懷" class="mood-btn-img" />
+            <span class="mood-btn-name">溫暖釋懷</span>
+          </button>
+          <button class="mood-btn" data-mood="brave" type="button" title="充滿勇氣">
+            <img src="圖片/表情/mood_brave.png" alt="充滿勇氣" class="mood-btn-img" />
+            <span class="mood-btn-name">充滿勇氣</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- 載入劇本資料庫與核心遊戲邏輯 (含版本號保證快取即時更新) -->
-  <script src="dialogues.js?v=20261014_v3"></script>
-  <script src="game.js?v=20261014_v3"></script>
+  <script src="dialogues.js?v=20261015_v1"></script>
+  <script src="game.js?v=20261015_v1"></script>
 </body>
 </html>

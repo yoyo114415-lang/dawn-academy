@@ -1555,3 +1555,157 @@ body {
   letter-spacing: 0.3px;
 }
 
+/* ==========================================================================
+   每日放學轉場心情札記選擇 Modal 樣式 (上3下3去背表情)
+   ========================================================================== */
+.mood-checkin-card {
+  background: #fdfaf3;
+  border: 2px solid #ebdcc5;
+  border-radius: 24px;
+  padding: 28px 32px;
+  max-width: 600px;
+  width: 92%;
+  box-shadow: 0 16px 40px rgba(74, 50, 20, 0.25);
+  text-align: center;
+  animation: popIn 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.mood-checkin-badge {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #a05a18;
+  background: #fdf2d8;
+  border: 1px solid #ebd09c;
+  padding: 4px 14px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+.mood-checkin-title {
+  font-size: 21px;
+  color: var(--text-main);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.mood-checkin-desc {
+  font-size: 14.5px;
+  color: var(--text-sub);
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+/* 上3下3 網格 */
+.mood-options-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.mood-btn {
+  background: #ffffff;
+  border: 1.5px solid #ebdcc5;
+  border-radius: 16px;
+  padding: 14px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+}
+
+.mood-btn:hover {
+  transform: translateY(-4px) scale(1.03);
+  border-color: #d49b2d;
+  box-shadow: 0 8px 20px rgba(212, 155, 45, 0.22);
+  background: #fffdf8;
+}
+
+.mood-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.mood-btn-img {
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+  transition: transform 0.22s ease;
+  pointer-events: none;
+}
+
+.mood-btn:hover .mood-btn-img {
+  transform: scale(1.12);
+}
+
+.mood-btn-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   結算畫面：雷達圖下方橫向時間軸卡片 (五天橫向並列)
+   ========================================================================== */
+.ending-mood-card {
+  background: #fdfaf3;
+  border: 1.5px solid #ebdcc5;
+  border-radius: 20px;
+  padding: 16px 18px;
+  margin-top: 14px;
+}
+
+.ending-mood-timeline {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.timeline-day-col {
+  background: #ffffff;
+  border: 1.5px solid #ebdcc5;
+  border-radius: 12px;
+  padding: 10px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.timeline-day-col:hover {
+  transform: translateY(-2px);
+  border-color: #d49b2d;
+}
+
+.timeline-day-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #7a6651;
+  background: #fdf6ec;
+  border: 1px solid #ebdcc5;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.timeline-mood-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.timeline-mood-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+  white-space: nowrap;
+}
+
+

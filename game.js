@@ -74,6 +74,16 @@
     }
   };
 
+  // 每日心情札記去背表情資料庫 (6 種情緒・100% 去背透明圖檔)
+  const MoodDatabase = {
+    sad: { id: 'sad', name: '難過委屈', img: '圖片/表情/mood_sad.png' },
+    anxious: { id: 'anxious', name: '緊張害怕', img: '圖片/表情/mood_anxious.png' },
+    confused: { id: 'confused', name: '有些迷茫', img: '圖片/表情/mood_confused.png' },
+    relieved: { id: 'relieved', name: '感到安心', img: '圖片/表情/mood_relieved.png' },
+    warm: { id: 'warm', name: '溫暖釋懷', img: '圖片/表情/mood_warm.png' },
+    brave: { id: 'brave', name: '充滿勇氣', img: '圖片/表情/mood_brave.png' }
+  };
+
   const GameState = {
     screen: 'cover',           // 'cover' | 'select' | 'game'
     selectedGender: 'boy',     // 'boy' | 'girl' | 'neutral'
@@ -86,6 +96,15 @@
       courage: 40,             // 勇氣值
       safety: 35,              // 安全感
       selfEsteem: 30           // 自我肯定值
+    },
+
+    // 每日放學轉場心情札記記錄 (Day 1 ~ 5)
+    dailyMoods: {
+      1: null,
+      2: null,
+      3: null,
+      4: null,
+      5: null
     },
 
     // 玩家在各題的選擇記錄 (支援條件分支，如 Q1: 'B')
@@ -2563,6 +2582,13 @@
         safety: 35,
         selfEsteem: 30
       };
+      GameState.dailyMoods = {
+        1: null,
+        2: null,
+        3: null,
+        4: null,
+        5: null
+      };
       GameState.quest = {
         step: 1,
         activeNodeId: 'node1',
@@ -2610,6 +2636,7 @@
       const saveData = {
         selectedGender: GameState.selectedGender,
         stats: GameState.stats,
+        dailyMoods: GameState.dailyMoods,
         quest: {
           step: GameState.quest.step,
           activeNodeId: GameState.quest.activeNodeId,
@@ -2632,6 +2659,7 @@
         const data = JSON.parse(raw);
         GameState.selectedGender = data.selectedGender || 'boy';
         GameState.stats = data.stats || GameState.stats;
+        GameState.dailyMoods = data.dailyMoods || { 1: null, 2: null, 3: null, 4: null, 5: null };
         if (data.quest) {
           GameState.quest.step = data.quest.step || 1;
           GameState.quest.activeNodeId = data.quest.activeNodeId || 'node1';
@@ -2686,6 +2714,21 @@
       if (descEl) descEl.textContent = questData.desc;
       if (objEl) objEl.textContent = `▶ 目標：${questData.objective}`;
       if (locEl) locEl.textContent = `▶ 地點：${questData.location}`;
+
+      // 同步更新右側支線任務日誌描述
+      const sideDescEl = document.querySelector('.quest-side-desc');
+      if (sideDescEl) {
+        const moods = GameState.dailyMoods || {};
+        const recordedDays = Object.keys(moods)
+          .filter(d => moods[d])
+          .map(d => `第${['一','二','三','四','五'][d-1]}天【${moods[d].name}】`);
+
+        if (recordedDays.length === 0) {
+          sideDescEl.innerHTML = '🌱 <strong>心靈手札進行中</strong><br>專注體驗今日校園探索，今日心情將於放學轉場時開放填寫。';
+        } else {
+          sideDescEl.innerHTML = `🌱 <strong>心靈手札（已記錄 ${recordedDays.length}/5 天）</strong><br>最近記錄：${recordedDays[recordedDays.length - 1]}<br>今日新經歷將於放學轉場時開放填寫。`;
+        }
+      }
     },
 
     // 更新 HUD 與五維數值長條圖 (支援 2 秒浮動增減標籤)
@@ -4279,7 +4322,7 @@
         this.updateHUD();
         this.updateQuestBanner();
       }
-      // Q3 完成 (Day 1 放學 ➔ 進入 Day 2)
+      // Q3 完成 (Day 1 放學 ➔ 心情札記 ➔ 進入 Day 2)
       else if (nodeId === 'node3') {
         this.showDayTransition({
           badge: '第一天・放學',
@@ -4287,20 +4330,22 @@
           subtitle: '走出校門，回家好好休息。明天又是新的一天。',
           playBell: true
         }, () => {
-          this.showDayTransition({
-            badge: '第二天・清晨',
-            title: '第二天，早上',
-            subtitle: '晨光灑入校園，深吸一口氣，迎接新的一天。',
-            playBell: false
-          }, () => {
-            GameState.day = 2;
-            GameState.timeOfDay = '早上';
-            GameState.quest.step = 4;
-            GameState.quest.activeNodeId = 'node4';
-            GameState.quest.text = '第 2 天早上：請經由走廊前往穿堂大廳（S5）面對同儕閒話。';
-            this.changeScene('S4', { x: 900, y: 310, dir: 'right' });
-            this.updateHUD();
-            this.updateQuestBanner();
+          this.showMoodCheckin(1, () => {
+            this.showDayTransition({
+              badge: '第二天・清晨',
+              title: '第二天，早上',
+              subtitle: '晨光灑入校園，深吸一口氣，迎接新的一天。',
+              playBell: false
+            }, () => {
+              GameState.day = 2;
+              GameState.timeOfDay = '早上';
+              GameState.quest.step = 4;
+              GameState.quest.activeNodeId = 'node4';
+              GameState.quest.text = '第 2 天早上：請經由走廊前往穿堂大廳（S5）面對同儕閒話。';
+              this.changeScene('S4', { x: 900, y: 310, dir: 'right' });
+              this.updateHUD();
+              this.updateQuestBanner();
+            });
           });
         });
       }
@@ -4314,7 +4359,7 @@
         this.updateHUD();
         this.updateQuestBanner();
       }
-      // Q5 完成 (Day 2 放學 ➔ 進入 Day 3)
+      // Q5 完成 (Day 2 放學 ➔ 心情札記 ➔ 進入 Day 3)
       else if (nodeId === 'node5') {
         this.showDayTransition({
           badge: '第二天・放學',
@@ -4322,24 +4367,26 @@
           subtitle: '面對困境的勇氣正在累積，回家養足精神。',
           playBell: true
         }, () => {
-          this.showDayTransition({
-            badge: '第三天・白天',
-            title: '第三天，白天',
-            subtitle: '學校安排了親師三方會談，請前往學務處。',
-            playBell: false
-          }, () => {
-            GameState.day = 3;
-            GameState.timeOfDay = '白天';
-            GameState.quest.step = 6;
-            GameState.quest.activeNodeId = 'node6';
-            GameState.quest.text = '第 3 天：請進入走廊右側學務處（S7），參加三方家長會談。';
-            this.changeScene('S4', { x: 750, y: 310, dir: 'right' });
-            this.updateHUD();
-            this.updateQuestBanner();
+          this.showMoodCheckin(2, () => {
+            this.showDayTransition({
+              badge: '第三天・白天',
+              title: '第三天，白天',
+              subtitle: '學校安排了親師三方會談，請前往學務處。',
+              playBell: false
+            }, () => {
+              GameState.day = 3;
+              GameState.timeOfDay = '白天';
+              GameState.quest.step = 6;
+              GameState.quest.activeNodeId = 'node6';
+              GameState.quest.text = '第 3 天：請進入走廊右側學務處（S7），參加三方家長會談。';
+              this.changeScene('S4', { x: 750, y: 310, dir: 'right' });
+              this.updateHUD();
+              this.updateQuestBanner();
+            });
           });
         });
       }
-      // Q6~Q8 完成 (Day 3 三方會談結束 ➔ 進入 Day 4 回家臥室)
+      // Q6~Q8 完成 (Day 3 三方會談結束 ➔ 心情札記 ➔ 進入 Day 4 回家臥室)
       else if (nodeId === 'node6') {
         this.showDayTransition({
           badge: '第三天・傍晚',
@@ -4347,20 +4394,22 @@
           subtitle: '收拾好書包，搭車回到溫暖的家中。',
           playBell: true
         }, () => {
-          this.showDayTransition({
-            badge: '第四天・傍晚',
-            title: '第四天，傍晚',
-            subtitle: '家：臥室。媽媽敲了敲房門，走進房間關心你……',
-            playBell: false
-          }, () => {
-            GameState.day = 4;
-            GameState.timeOfDay = '傍晚';
-            GameState.quest.step = 7;
-            GameState.quest.activeNodeId = 'node7';
-            GameState.quest.text = '第 4 天傍晚：在臥室床邊與媽媽坦誠溝通（Node 7）。';
-            this.changeScene('S8', { x: 300, y: 300, dir: 'left' });
-            this.updateHUD();
-            this.updateQuestBanner();
+          this.showMoodCheckin(3, () => {
+            this.showDayTransition({
+              badge: '第四天・傍晚',
+              title: '第四天，傍晚',
+              subtitle: '家：臥室。媽媽敲了敲房門，走進房間關心你……',
+              playBell: false
+            }, () => {
+              GameState.day = 4;
+              GameState.timeOfDay = '傍晚';
+              GameState.quest.step = 7;
+              GameState.quest.activeNodeId = 'node7';
+              GameState.quest.text = '第 4 天傍晚：在臥室床邊與媽媽坦誠溝通（Node 7）。';
+              this.changeScene('S8', { x: 300, y: 300, dir: 'left' });
+              this.updateHUD();
+              this.updateQuestBanner();
+            });
           });
         });
       }
@@ -4374,7 +4423,7 @@
         this.updateHUD();
         this.updateQuestBanner();
       }
-      // Q10 完成 (Day 4 客廳導師電話 ➔ 進入 Day 5 重返教室)
+      // Q10 完成 (Day 4 客廳導師電話 ➔ 心情札記 ➔ 進入 Day 5 重返教室)
       else if (nodeId === 'node8') {
         this.showDayTransition({
           badge: '第四天・夜深',
@@ -4382,30 +4431,34 @@
           subtitle: '有了家人與老師的堅定後盾，你不再孤單。',
           playBell: false
         }, () => {
-          this.showDayTransition({
-            badge: '第五天・清晨',
-            title: '第五天，清晨',
-            subtitle: '破曉時分，帶著堅定的信心重返班級教室。',
-            playBell: false
-          }, () => {
-            GameState.day = 5;
-            GameState.timeOfDay = '清晨';
-            GameState.quest.step = 9;
-            GameState.quest.activeNodeId = 'node9';
-            GameState.quest.text = '第 5 天清晨：回到教室（S3），接受同學丙的支持與善意。';
-            this.changeScene('S3', { x: 700, y: 470, dir: 'left' });
-            this.updateHUD();
-            this.updateQuestBanner();
+          this.showMoodCheckin(4, () => {
+            this.showDayTransition({
+              badge: '第五天・清晨',
+              title: '第五天，清晨',
+              subtitle: '破曉時分，帶著堅定的信心重返班級教室。',
+              playBell: false
+            }, () => {
+              GameState.day = 5;
+              GameState.timeOfDay = '清晨';
+              GameState.quest.step = 9;
+              GameState.quest.activeNodeId = 'node9';
+              GameState.quest.text = '第 5 天清晨：回到教室（S3），接受同學丙的支持與善意。';
+              this.changeScene('S3', { x: 700, y: 470, dir: 'left' });
+              this.updateHUD();
+              this.updateQuestBanner();
+            });
           });
         });
       }
-      // Q11 完成 (Day 5 班級教室同學丙 ➔ 全劇本圓滿達成，邁向大結局)
+      // Q11 完成 (Day 5 班級教室同學丙 ➔ 第 5 天心情札記 ➔ 全劇本圓滿達成，邁向大結局)
       else if (nodeId === 'node9') {
         GameState.quest.step = 10;
         GameState.quest.text = '全劇情圓滿達成！請走出校門口（S2），迎接陽光破曉大結局。';
-        this.showToast('感受到了同儕的溫暖！請走出校門口，邁向破曉結局！');
         this.updateHUD();
         this.updateQuestBanner();
+        this.showMoodCheckin(5, () => {
+          this.showToast('感受到了同儕的溫暖！請走出校門口，邁向破曉結局！');
+        });
       }
     },
 
@@ -4720,9 +4773,109 @@
       // 繪製雙層五角形對比雷達圖 (初始淡色 vs 當前深色)
       this.drawRadarChart(s);
 
+      // 渲染雷達圖下方 5 天橫向心靈手札時間軸
+      this.populateMoodTimeline();
+
       // 雙重保證延遲渲染，確保 Canvas 在 CSS 顯現後必定繪出
       requestAnimationFrame(() => this.drawRadarChart(s));
       setTimeout(() => this.drawRadarChart(s), 60);
+    },
+
+    // 渲染結算畫面：雷達圖下方 5 天橫向時間軸 (第一天到第五天橫排，表情在下面橫排)
+    populateMoodTimeline() {
+      const container = document.getElementById('ending-mood-timeline');
+      if (!container) return;
+      container.textContent = '';
+
+      const dayNames = ['第一天', '第二天', '第三天', '第四天', '第五天'];
+      for (let day = 1; day <= 5; day++) {
+        const mood = GameState.dailyMoods ? GameState.dailyMoods[day] : null;
+
+        const col = document.createElement('div');
+        col.className = 'timeline-day-col';
+
+        // 1. 第一排：天數標籤 (第一天、第二天...)
+        const label = document.createElement('div');
+        label.className = 'timeline-day-label';
+        label.textContent = dayNames[day - 1];
+        col.appendChild(label);
+
+        // 2. 第二排：表情去背圖
+        const img = document.createElement('img');
+        img.className = 'timeline-mood-img';
+        if (mood && mood.img) {
+          img.src = mood.img;
+          img.alt = mood.name;
+          img.title = `${dayNames[day - 1]}：${mood.name}`;
+        } else {
+          // 未到或未記錄時顯示半透明預設圖
+          img.src = '圖片/表情/mood_confused.png';
+          img.style.opacity = '0.25';
+          img.style.filter = 'grayscale(100%)';
+          img.alt = '待記錄';
+          img.title = '尚未記錄此日心情';
+        }
+        col.appendChild(img);
+
+        // 3. 第三排：表情名稱
+        const name = document.createElement('div');
+        name.className = 'timeline-mood-name';
+        name.textContent = mood ? mood.name : '（待記錄）';
+        if (!mood) {
+          name.style.color = '#a6b4b8';
+          name.style.fontSize = '12px';
+        }
+        col.appendChild(name);
+
+        container.appendChild(col);
+      }
+    },
+
+    // 每日放學轉場心情札記彈出視窗 (六宮格・上3下3・去背表情)
+    showMoodCheckin(dayNumber, onComplete) {
+      const modal = document.getElementById('modal-mood-checkin');
+      if (!modal) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      const dayChinese = ['一', '二', '三', '四', '五'][dayNumber - 1] || dayNumber;
+      const badgeEl = document.getElementById('mood-checkin-badge');
+      if (badgeEl) {
+        badgeEl.textContent = `第${dayChinese}天・心靈沉澱`;
+      }
+
+      const titleEl = document.getElementById('mood-checkin-title');
+      if (titleEl) {
+        titleEl.textContent = `🌱 第${dayChinese}天結束了・今天的心情是什麼呢？`;
+      }
+
+      modal.classList.add('active');
+
+      const buttons = modal.querySelectorAll('.mood-btn');
+      const handleSelect = (btn) => {
+        const moodKey = btn.getAttribute('data-mood');
+        const moodData = MoodDatabase[moodKey];
+        if (moodData) {
+          GameState.dailyMoods[dayNumber] = moodData;
+          SoundFX.positive();
+          this.showToast(`已記錄第${dayChinese}天心情：${moodData.name}`);
+          this.updateQuestBanner();
+          this.saveGame();
+        }
+
+        modal.classList.remove('active');
+        // 清理監聽避免重複
+        buttons.forEach(b => b.onclick = null);
+
+        setTimeout(() => {
+          if (onComplete) onComplete();
+        }, 350);
+      };
+
+      buttons.forEach(btn => {
+        btn.onclick = () => handleSelect(btn);
+      });
     },
 
     // 大結局結算 (走出校門或完成全部劇情時觸發)
