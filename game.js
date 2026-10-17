@@ -2569,7 +2569,10 @@
         setTimeout(() => hud.classList.add('visible'), 250);
       } else if (screenName === 'ending') {
         const endScreen = document.getElementById('screen-ending');
-        if (endScreen) endScreen.classList.add('active');
+        if (endScreen) {
+          endScreen.classList.add('active');
+          endScreen.scrollTop = 0;
+        }
         hud.classList.remove('visible');
       }
     },
@@ -2724,9 +2727,9 @@
           .map(d => `第${['一','二','三','四','五'][d-1]}天【${moods[d].name}】`);
 
         if (recordedDays.length === 0) {
-          sideDescEl.innerHTML = '🌱 <strong>心靈手札進行中</strong><br>專注體驗今日校園探索，今日心情將於放學轉場時開放填寫。';
+          sideDescEl.innerHTML = '🌱 <strong>心靈日記進行中</strong><br>專注體驗今日校園探索，今日心情將於放學轉場時開放填寫。';
         } else {
-          sideDescEl.innerHTML = `🌱 <strong>心靈手札（已記錄 ${recordedDays.length}/5 天）</strong><br>最近記錄：${recordedDays[recordedDays.length - 1]}<br>今日新經歷將於放學轉場時開放填寫。`;
+          sideDescEl.innerHTML = `🌱 <strong>心靈日記（已記錄 ${recordedDays.length}/5 天）</strong><br>最近記錄：${recordedDays[recordedDays.length - 1]}<br>今日新經歷將於放學轉場時開放填寫。`;
         }
       }
     },
@@ -4702,8 +4705,10 @@
     openRadarModal() {
       const s = GameState.stats;
 
-      // 切換至結算/雷達圖面板
+      // 切換至結算/雷達圖面板並重設捲動位置至頂端
       this.switchScreen('ending');
+      const screenEl = document.getElementById('screen-ending');
+      if (screenEl) screenEl.scrollTop = 0;
 
       const isCompleted = GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10;
       const evalRes = isCompleted ? this.getDetailedEndingEvaluation(s) : null;
@@ -4773,7 +4778,7 @@
       // 繪製雙層五角形對比雷達圖 (初始淡色 vs 當前深色)
       this.drawRadarChart(s);
 
-      // 渲染雷達圖下方 5 天橫向心靈手札時間軸
+      // 渲染雷達圖下方 5 天橫向心靈日記時間軸
       this.populateMoodTimeline();
 
       // 雙重保證延遲渲染，確保 Canvas 在 CSS 顯現後必定繪出

@@ -1039,9 +1039,13 @@ body {
 #screen-ending {
   background: var(--bg-parchment);
   overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 32px 20px;
+  justify-content: flex-start;
+  padding: 36px 20px 60px 20px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ending-container {
@@ -1053,7 +1057,8 @@ body {
   padding: 36px 40px;
   box-shadow: var(--shadow-lg);
   animation: fadeIn 0.5s ease;
-  margin: auto;
+  margin: 0 auto;
+  flex-shrink: 0;
 }
 
 .ending-header-section {
