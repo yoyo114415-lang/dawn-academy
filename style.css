@@ -1037,15 +1037,19 @@ body {
    6. 大結局結算全螢幕畫面 (#screen-ending)
    ========================================================================== */
 #screen-ending {
+  display: none;
   background: var(--bg-parchment);
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 36px 20px 60px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+
+#screen-ending.active {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 36px 20px 60px 20px;
-  -webkit-overflow-scrolling: touch;
 }
 
 .ending-container {
