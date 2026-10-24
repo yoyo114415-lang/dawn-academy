@@ -4345,7 +4345,8 @@
         const choice = GameState.playerChoices['Q2'];
         // 選項二：不回話，先找一位信任的同學，請對方陪你走回教室。
         if (choice === '2' || choice === 'B') {
-          this.changeScene('S3', { x: 720, y: 470, dir: 'left' });
+          // 傳送至教室中央寬敞主走道（x: 360, y: 320），遠離角落課桌椅，暢行無阻且視野開闊
+          this.changeScene('S3', { x: 360, y: 320, dir: 'right' });
           GameState.quest.text = '遭遇同儕威脅！雖然同學陪伴回到了教室，仍請走出教室前往輔導室（S6）尋求輔導老師協助。';
           this.showToast('同學已陪你走回教室。但遇到威脅仍請走出教室，前往走廊旁的輔導室尋求大人協助。');
           this.updateHUD();
