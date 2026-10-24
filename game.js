@@ -3947,20 +3947,26 @@
           if (item.type === 'narrative') {
             lines.push({ speaker: '旁白', text: item.text, npc: null });
           } else if (item.type === 'conditional') {
-            // 條件分支解析 (例如 Q1 == 'B' 照片存證分支)
+            // 條件分支解析 (例如 Q1 == '2' 照片存證分支，向下相容 'B')
             const cond = item.condition || '';
             let isMet = false;
-            const match = cond.match(/(\w+)\s*==\s*['"](\w+)['"]/);
-            if (match) {
-              const qKey = match[1];
-              const val = match[2];
-              isMet = (GameState.playerChoices[qKey] === val);
+            const parts = cond.split('||');
+            for (const part of parts) {
+              const match = part.trim().match(/(\w+)\s*==\s*['"](\w+)['"]/);
+              if (match) {
+                const qKey = match[1];
+                const val = match[2];
+                if (GameState.playerChoices[qKey] === val) {
+                  isMet = true;
+                  break;
+                }
+              }
             }
             if (isMet) {
               const c = item.content || {};
-              lines.push({ speaker: c.speaker || '老師', text: c.text, npc: c.speaker || '老師' });
+              lines.push({ speaker: c.speaker || '輔導老師', text: c.text, npc: c.speaker || '輔導老師' });
             } else {
-              // 若未拍照存證（非選 B 情況），依指示以「（沉默不語）」呈現受凌學生的心理狀態
+              // 若未拍照存證（非選 2 情況），依指示以「（沉默不語）」呈現受凌學生的心理狀態
               lines.push({ speaker: '你', text: '（沉默不語）', npc: null });
             }
           } else if (item.speaker && item.text) {
@@ -4123,11 +4129,11 @@
       optionsList.forEach((opt, idx) => {
         const btn = document.createElement('button');
         btn.className = 'choice-btn';
-        const letterKey = opt.letter || opt.key || String.fromCharCode(65 + idx);
+        const letterKey = opt.letter || opt.key || String(idx + 1);
         
         const keySpan = document.createElement('span');
         keySpan.className = 'choice-key';
-        keySpan.textContent = letterKey;
+        keySpan.textContent = String(idx + 1);
 
         const textSpan = document.createElement('span');
         textSpan.textContent = opt.text;
@@ -4320,10 +4326,22 @@
       else if (nodeId === 'node2') {
         GameState.quest.step = 3;
         GameState.quest.activeNodeId = 'node3';
-        GameState.quest.text = '遭遇同儕威脅！請進入輔導室（S6）尋求導師協助。';
-        this.showToast('請跟隨黃色箭頭，進入中間木門（輔導室）。');
-        this.updateHUD();
-        this.updateQuestBanner();
+
+        const choice = GameState.playerChoices['Q2'];
+        // 選項二：不回話，先找一位信任的同學，請對方陪你走回教室。
+        if (choice === '2' || choice === 'B') {
+          this.changeScene('S3', { x: 680, y: 470, dir: 'left' });
+          GameState.quest.text = '遭遇同儕威脅！雖然同學陪伴回到了教室，仍請走出教室前往輔導室（S6）尋求輔導老師協助。';
+          this.showToast('同學已陪你走回教室。但遇到威脅仍請走出教室，前往走廊旁的輔導室尋求大人協助。');
+          this.updateHUD();
+          this.updateQuestBanner();
+        } else {
+          // 選項三或選項一：保持原本在走廊，讓玩家自行從走廊走去輔導室
+          GameState.quest.text = '遭遇同儕威脅！請進入輔導室（S6）尋求輔導老師協助。';
+          this.showToast('請跟隨黃色箭頭，進入中間木門（輔導室）。');
+          this.updateHUD();
+          this.updateQuestBanner();
+        }
       }
       // Q3 完成 (Day 1 放學 ➔ 心情札記 ➔ 進入 Day 2)
       else if (nodeId === 'node3') {

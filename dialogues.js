@@ -57,7 +57,7 @@ window.GAME_DIALOGUES = {
         "prompt": "這時候，你會怎麼做？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "（把紙條和垃圾收一收，假裝沒看到，低頭坐好。）",
             "effects": {
               "stress": 8,
@@ -76,7 +76,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "（先把紙條和抽屜拍照留下來，再想想要告訴誰。）",
             "effects": {
               "stress": -6,
@@ -95,7 +95,7 @@ window.GAME_DIALOGUES = {
             "tier": "best"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "（看著同學甲）請你們不要再這樣，我會不舒服。",
             "effects": {
               "stress": 2,
@@ -144,7 +144,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你會怎麼做？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "好啊，我才不怕你們，儘管來！",
             "effects": {
               "stress": 9,
@@ -163,7 +163,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "（不回話，先找一位信任的同學，請對方陪你走回教室。）",
             "effects": {
               "stress": -3,
@@ -182,7 +182,7 @@ window.GAME_DIALOGUES = {
             "tier": "mid"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "（不回話，轉身去找老師，把剛剛的話說清楚。）",
             "effects": {
               "stress": -7,
@@ -208,8 +208,8 @@ window.GAME_DIALOGUES = {
       },
       "outro": [
         {
-          "speaker": "老師",
-          "text": "下課後，請來輔導室找老師一下，我們慢慢說，謝謝。"
+          "speaker": "輔導老師",
+          "text": "下課後，請來輔導室找輔導老師一下，我們慢慢說，謝謝。"
         }
       ],
       "next": "node3"
@@ -224,28 +224,28 @@ window.GAME_DIALOGUES = {
       "triggerType": "auto_enter_counseling",
       "intro": [
         {
-          "speaker": "老師",
+          "speaker": "輔導老師",
           "text": "請坐。老師今天早上巡班，也看到了你桌上的紙條和抽屜。"
         },
         {
           "type": "conditional",
-          "condition": "Q1 == 'B'",
+          "condition": "Q1 == '2' || Q1 == 'B'",
           "content": {
-            "speaker": "老師",
+            "speaker": "輔導老師",
             "text": "你拍下的照片很清楚，幫了大忙。"
           }
         },
         {
-          "speaker": "老師",
+          "speaker": "輔導老師",
           "text": "這不只是惡作劇。你想跟老師說說發生了什麼事嗎？"
         }
       ],
       "question": {
         "id": "Q3",
-        "prompt": "你會怎麼回答老師？",
+        "prompt": "你會怎麼回答輔導老師？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "同學們一起不理我、捉弄我，我需要老師幫忙。",
             "effects": {
               "stress": -8,
@@ -256,7 +256,7 @@ window.GAME_DIALOGUES = {
             },
             "replies": [
               {
-                "speaker": "老師",
+                "speaker": "輔導老師",
                 "text": "謝謝你願意說。你做得很好，學校會一起處理。"
               }
             ],
@@ -264,7 +264,7 @@ window.GAME_DIALOGUES = {
             "tier": "best"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "是不是我做錯了？如果我沒有記名字，就不會這樣了……",
             "effects": {
               "stress": 8,
@@ -275,7 +275,7 @@ window.GAME_DIALOGUES = {
             },
             "replies": [
               {
-                "speaker": "老師",
+                "speaker": "輔導老師",
                 "text": "看著老師。照規定做事，不是被排擠的理由。這不是你的錯。"
               }
             ],
@@ -283,7 +283,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "可能只是鬧著玩，但我有點不舒服，不知道要不要說。",
             "effects": {
               "stress": -2,
@@ -294,7 +294,7 @@ window.GAME_DIALOGUES = {
             },
             "replies": [
               {
-                "speaker": "老師",
+                "speaker": "輔導老師",
                 "text": "讓你不舒服的事，就值得說。老師會陪你慢慢整理。"
               }
             ],
@@ -305,11 +305,11 @@ window.GAME_DIALOGUES = {
       },
       "bridge": [
         {
-          "speaker": "老師",
+          "speaker": "輔導老師",
           "text": "還有，老師發現你最近眼睛紅紅的，好像很累。"
         },
         {
-          "speaker": "老師",
+          "speaker": "輔導老師",
           "text": "如果願意，可以說說最近的心情。"
         }
       ],
@@ -318,7 +318,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你會怎麼回答？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "我現在還不想說，可以讓我先想一想嗎？",
             "effects": {
               "stress": -2,
@@ -329,7 +329,7 @@ window.GAME_DIALOGUES = {
             },
             "replies": [
               {
-                "speaker": "老師",
+                "speaker": "輔導老師",
                 "text": "當然可以，不急。想說的時候，輔導室的門隨時為你開著。"
               }
             ],
@@ -337,7 +337,7 @@ window.GAME_DIALOGUES = {
             "tier": "mid"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "我沒事，真的不用麻煩老師，也不要告訴爸媽。",
             "effects": {
               "stress": 8,
@@ -348,7 +348,7 @@ window.GAME_DIALOGUES = {
             },
             "replies": [
               {
-                "speaker": "老師",
+                "speaker": "輔導老師",
                 "text": "你不想讓大家擔心，老師懂。但這件事需要家人知道，我們一起面對。"
               }
             ],
@@ -356,7 +356,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "我晚上常睡不著，也很怕放學被人堵，不知道怎麼辦。",
             "effects": {
               "stress": -9,
@@ -367,11 +367,11 @@ window.GAME_DIALOGUES = {
             },
             "replies": [
               {
-                "speaker": "老師",
+                "speaker": "輔導老師",
                 "text": "謝謝你說出來，這很勇敢。今天放學，老師陪你走到校門口。"
               },
               {
-                "speaker": "老師",
+                "speaker": "輔導老師",
                 "text": "明天，學務處也會開始保護你的安全。"
               }
             ],
@@ -409,7 +409,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你會怎麼做？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "（心裡想）大家都在怪我，我今天不該來上學……",
             "effects": {
               "stress": 9,
@@ -432,7 +432,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "（走過去）我有點怕，可以請你們陪我走到辦公室嗎？",
             "effects": {
               "stress": -5,
@@ -455,7 +455,7 @@ window.GAME_DIALOGUES = {
             "tier": "best"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "（假裝沒聽到，低著頭快步走開。）",
             "effects": {
               "stress": 2,
@@ -500,7 +500,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你會怎麼做？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "你們才奇怪！少在那邊囂張！",
             "effects": {
               "stress": 9,
@@ -519,7 +519,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "（低下頭不回答，快步從旁邊走過去。）",
             "effects": {
               "stress": 1,
@@ -542,7 +542,7 @@ window.GAME_DIALOGUES = {
             "tier": "mid"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "我不想吵架。（說完就往有老師的地方走。）",
             "effects": {
               "stress": -6,
@@ -581,7 +581,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你嚇了一跳。這時候，你會怎麼做？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "（立刻往有大人的地方跑，大聲喊）老師！這裡有人帶危險的東西！",
             "effects": {
               "stress": -8,
@@ -604,7 +604,7 @@ window.GAME_DIALOGUES = {
             "tier": "best"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "（小聲說）好，我放學去見你。拜託別動手，我也不告訴老師。",
             "effects": {
               "stress": 10,
@@ -631,7 +631,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "（慢慢往後退，先回教室，再想想要不要說。）",
             "effects": {
               "stress": 3,
@@ -696,7 +696,7 @@ window.GAME_DIALOGUES = {
         "prompt": "大家都看著你。你會怎麼說？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "難道真的是我的問題嗎……對不起，我會改，請你們不要怪我。",
             "effects": {
               "stress": 9,
@@ -719,7 +719,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "我沒有罵人或動手。但被嘲笑、被用東西嚇，我真的很害怕。",
             "effects": {
               "stress": -7,
@@ -754,7 +754,7 @@ window.GAME_DIALOGUES = {
             "tier": "best"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "我說不太出來……可以請老師和媽媽幫我說嗎？",
             "effects": {
               "stress": -4,
@@ -817,7 +817,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你會怎麼回答？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "我誰都不想見，反正大家都討厭我，我不想回學校了！",
             "effects": {
               "stress": 9,
@@ -840,7 +840,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "我還不知道要不要去，先讓我一個人待一下。",
             "effects": {
               "stress": 1,
@@ -859,7 +859,7 @@ window.GAME_DIALOGUES = {
             "tier": "mid"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "我有點怕，但想試試看。媽媽可以陪我去嗎？",
             "effects": {
               "stress": -8,
@@ -908,7 +908,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你會怎麼回答？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "我會緊張，但想試試看。可以請老師早上陪我進教室嗎？",
             "effects": {
               "stress": -7,
@@ -927,7 +927,7 @@ window.GAME_DIALOGUES = {
             "tier": "best"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "我還是很害怕。大家會不會在背後笑我？",
             "effects": {
               "stress": 1,
@@ -950,7 +950,7 @@ window.GAME_DIALOGUES = {
             "tier": "mid"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "我想再請幾天假，等大家忘記這件事再回去。",
             "effects": {
               "stress": 8,
@@ -1007,7 +1007,7 @@ window.GAME_DIALOGUES = {
         "prompt": "你想對同學丙說什麼？",
         "choices": [
           {
-            "letter": "A",
+            "letter": "1",
             "text": "謝謝你們。以前的事我還有點難過，但我願意重新開始。",
             "effects": {
               "stress": -8,
@@ -1030,7 +1030,7 @@ window.GAME_DIALOGUES = {
             "tier": "best"
           },
           {
-            "letter": "B",
+            "letter": "2",
             "text": "謝謝。但我以後只想自己讀書，不想和大家有太多牽扯。",
             "effects": {
               "stress": 8,
@@ -1049,7 +1049,7 @@ window.GAME_DIALOGUES = {
             "tier": "weak"
           },
           {
-            "letter": "C",
+            "letter": "3",
             "text": "謝謝你的筆記。我想慢慢來，需要的時候再跟你說。",
             "effects": {
               "stress": -3,
