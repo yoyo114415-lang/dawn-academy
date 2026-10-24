@@ -2977,6 +2977,21 @@
         GameState.player.x = spawn.x;
         GameState.player.y = spawn.y;
         GameState.player.direction = spawn.dir || 'down';
+
+        // 碰撞防卡死防呆機制：若傳送座標落在障礙物內，自動向相鄰空曠處微調解卡
+        if (this.isColliding(GameState.player.x, GameState.player.y)) {
+          const offsets = [
+            { dx: 40, dy: 0 }, { dx: -40, dy: 0 }, { dx: 0, dy: 40 }, { dx: 0, dy: -40 },
+            { dx: 50, dy: 0 }, { dx: 60, dy: 0 }, { dx: -60, dy: 0 }
+          ];
+          for (const off of offsets) {
+            if (!this.isColliding(GameState.player.x + off.dx, GameState.player.y + off.dy)) {
+              GameState.player.x += off.dx;
+              GameState.player.y += off.dy;
+              break;
+            }
+          }
+        }
       }
 
       SoundFX.alert();
@@ -4330,7 +4345,7 @@
         const choice = GameState.playerChoices['Q2'];
         // 選項二：不回話，先找一位信任的同學，請對方陪你走回教室。
         if (choice === '2' || choice === 'B') {
-          this.changeScene('S3', { x: 680, y: 470, dir: 'left' });
+          this.changeScene('S3', { x: 720, y: 470, dir: 'left' });
           GameState.quest.text = '遭遇同儕威脅！雖然同學陪伴回到了教室，仍請走出教室前往輔導室（S6）尋求輔導老師協助。';
           this.showToast('同學已陪你走回教室。但遇到威脅仍請走出教室，前往走廊旁的輔導室尋求大人協助。');
           this.updateHUD();
