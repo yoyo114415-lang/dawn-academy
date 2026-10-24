@@ -25,10 +25,10 @@
       location: 'S4 走廊 (飲水機前)'
     },
     3: {
-      title: '【主線三】向導師傾訴求援',
-      desc: '內心承受巨大壓力，決定前往輔導室向信任的導師全盤說出遭遇。',
-      objective: '進入輔導室並與導師對話',
-      location: 'S6 輔導室 (導師辦公桌)'
+      title: '【主線三】向輔導老師傾訴求援',
+      desc: '內心承受同儕威脅的壓力，走出教室前往走廊旁的輔導室向輔導老師全盤說出遭遇。',
+      objective: '走出教室前往輔導室，與輔導老師對話',
+      location: 'S6 輔導室 (輔導老師辦公桌)'
     },
     4: {
       title: '【主線四】穿堂碎語與輿論蔓延',
@@ -2979,13 +2979,13 @@
         GameState.player.direction = spawn.dir || 'down';
 
         // 碰撞防卡死防呆機制：若傳送座標落在障礙物內，自動向相鄰空曠處微調解卡
-        if (this.isColliding(GameState.player.x, GameState.player.y)) {
+        if (this.checkCollision(GameState.player.x, GameState.player.y)) {
           const offsets = [
             { dx: 40, dy: 0 }, { dx: -40, dy: 0 }, { dx: 0, dy: 40 }, { dx: 0, dy: -40 },
             { dx: 50, dy: 0 }, { dx: 60, dy: 0 }, { dx: -60, dy: 0 }
           ];
           for (const off of offsets) {
-            if (!this.isColliding(GameState.player.x + off.dx, GameState.player.y + off.dy)) {
+            if (!this.checkCollision(GameState.player.x + off.dx, GameState.player.y + off.dy)) {
               GameState.player.x += off.dx;
               GameState.player.y += off.dy;
               break;
@@ -4183,6 +4183,13 @@
       const qId = (node && node.question) ? node.question.id : null;
       if (qId && option.letter) {
         GameState.playerChoices[qId] = option.letter;
+      }
+
+      // Q2 作出抉擇時即刻切換主線三狀態，讓右側任務日誌在玩家點選瞬間零時差同步
+      if (qId === 'Q2') {
+        GameState.quest.step = 3;
+        GameState.quest.activeNodeId = 'node3';
+        this.updateQuestBanner();
       }
 
       // 將玩家的抉擇回答加入對話歷程清單中
