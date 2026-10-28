@@ -5279,11 +5279,17 @@
     GAS_SERVICE_URL: 'https://script.google.com/macros/s/AKfycbzhhglIMJJnyPpJss5-WnxAiavVA6Hv-mMr5eVM5JV7NduAWmwv3g8L54XjIaPO5W0w/exec',
 
     // 核心繪圖引擎：動態生成高解析度心靈成長證書圖卡 (800 x 1140 像素)
-    generateEndingReportCard() {
+generateEndingReportCard() {
       const s = GameState.stats;
       const isCompleted = GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10;
-      const evalRes = this.getDetailedEndingEvaluation(s);
-      const overallScore = (GameState && GameState.getOverallScore) ? GameState.getOverallScore() : 85;
+      const evalRes = isCompleted ? this.getDetailedEndingEvaluation(s) : null;
+      const overallScore = (GameState && GameState.getOverallScore) ? GameState.getOverallScore() : 37;
+
+      // 忠實讀取當前網頁 DOM 狀態，確保圖卡與網頁版 100% 所見即所得
+      const badgeEl = document.getElementById('ending-badge');
+      const titleEl = document.getElementById('ending-title');
+      const badgeText = badgeEl ? badgeEl.textContent.trim() : (isCompleted && evalRes ? evalRes.badge : `五維心理狀態檢視（旅程進行中・Day ${GameState.day}）`);
+      const titleText = titleEl ? titleEl.textContent.trim() : (isCompleted && evalRes ? evalRes.title : '心靈羅盤：五維成長檢視');
 
       const canvas = document.createElement('canvas');
       canvas.width = 800;
@@ -5310,17 +5316,16 @@
       ctx.fillStyle = gradHeader;
       ctx.fillRect(24, 24, canvas.width - 48, 8);
 
-      // 3. 頂部榮譽徽章與證書標題
+      // 3. 頂部狀態標籤與證書主標題
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#e5983c';
-      ctx.font = 'bold 14px "Microsoft JhengHei", Arial, sans-serif';
-      ctx.fillText('✦ 評估完成・心靈破曉・專屬紀念證書 ✦', 400, 68);
+      ctx.fillStyle = isCompleted ? '#e5983c' : '#7a6651';
+      ctx.font = 'bold 13px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText(badgeText, 400, 68);
 
       ctx.fillStyle = '#422b13';
       ctx.font = 'bold 28px "Microsoft JhengHei", Arial, sans-serif';
       ctx.fillText('《破曉學園》心靈成長成果圖卡', 400, 106);
 
-      const titleText = isCompleted && evalRes ? evalRes.title : '心靈羅盤：五維成長檢視';
       ctx.fillStyle = '#b36a10';
       ctx.font = 'bold 18px "Microsoft JhengHei", Arial, sans-serif';
       ctx.fillText(`稱號：【${titleText}】  ｜  整體心靈狀態指數：${overallScore} 分`, 400, 138);
@@ -5332,13 +5337,13 @@
       ctx.lineTo(750, 155);
       ctx.stroke();
 
-      // 4. 中間左側：繪製五維心靈成長雷達圖 (中心: 220, 345, 半徑: 90)
+      // 4. 中間左側：繪製五維心靈成長雷達圖 (中心: 220, 340, 半徑: 88)
       ctx.textAlign = 'left';
       ctx.fillStyle = '#4a3319';
       ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
       ctx.fillText('📊 五維心靈成長雷達圖', 60, 185);
 
-      const cx = 220, cy = 345, R = 90;
+      const cx = 220, cy = 340, R = 88;
       const initialAxes = [
         { name: '放鬆度', val: 50 },
         { name: '安全感', val: 35 },
@@ -5426,7 +5431,7 @@
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      // 繪製當前頂點圓點
+      // 繪製頂點圓點
       for (let i = 0; i < 5; i++) {
         const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
         const r = (currentAxes[i].val / 100) * R;
@@ -5441,22 +5446,21 @@
         ctx.stroke();
       }
 
-      // 雷達圖圖例 (初始 vs 最終)
+      // 4.4 雷達圖下方說明文字 (100% 嚴格同步網頁版 .radar-legend-text 內容，消除虛構文字)
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#4a90e2';
+      ctx.fillStyle = '#7a6651';
       ctx.font = '12px "Microsoft JhengHei", Arial, sans-serif';
-      ctx.fillText('■ 入學起點', 160, 470);
-      ctx.fillStyle = '#d4881e';
-      ctx.fillText('■ 當前心靈防護傘', 270, 470);
+      ctx.fillText('✦ 綜合各指標數值繪製（放鬆度為 100 - 壓力值）', cx, 460);
+      ctx.fillText('呈現面對挑戰的心靈防護傘', cx, 478);
 
-      // 5. 中間右側：五維心理成長數值條 (x: 420, y: 185)
+      // 5. 中間右側：五維心理成長數值總覽 (100% 嚴格同步網頁版卡片名稱與各項標籤)
       ctx.textAlign = 'left';
       ctx.fillStyle = '#4a3319';
       ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
-      ctx.fillText('📈 五維心靈數值明細', 420, 185);
+      ctx.fillText('📈 五維心理成長數值總覽', 420, 185);
 
       const statsDetail = [
-        { name: '放鬆度 (100 - 壓力)', val: 100 - s.stress, init: 50, color: '#c0392b' },
+        { name: '放鬆度 (100 - 壓力值)', val: 100 - s.stress, init: 50, color: '#c0392b' },
         { name: '同儕關係值', val: s.peer, init: 30, color: '#8e44ad' },
         { name: '勇氣值', val: s.courage, init: 40, color: '#e67e22' },
         { name: '安全感', val: s.safety, init: 35, color: '#27ae60' },
@@ -5564,7 +5568,7 @@
         ctx.fillText(mood ? mood.name : '（待記錄）', x + cardW / 2, cardY + 98);
       }
 
-      // 7. 專屬心靈給力站 (y: 685 ~ 950)
+      // 7. 旅程進度或結算心靈卡片 (100% 嚴格同步網頁版內容，未通關絕不虛構評語！)
       const tipBoxY = 685;
       const tipBoxW = 700;
       const tipBoxH = 260;
@@ -5577,16 +5581,10 @@
       ctx.stroke();
 
       // 金黃左側飾條
-      ctx.fillStyle = '#d49b2d';
+      ctx.fillStyle = isCompleted ? '#d49b2d' : '#8e7966';
       ctx.beginPath();
       ctx.roundRect ? ctx.roundRect(50, tipBoxY, 6, tipBoxH, [14, 0, 0, 14]) : ctx.rect(50, tipBoxY, 6, tipBoxH);
       ctx.fill();
-
-      // 心靈給力站標題
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#875108';
-      ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
-      ctx.fillText('💡 心靈給力站・專屬蛻變與祝福寄語', 72, tipBoxY + 32);
 
       // 自動換行繪製文字小幫手
       const drawWrappedText = (text, startX, startY, maxWidth, lineHeight, font, color) => {
@@ -5609,11 +5607,27 @@
         return y + lineHeight;
       };
 
-      const insightText = evalRes ? evalRes.insight : '面對同儕相處與困境時，學會傾聽內心聲音、尋求值得信任的師長支援，是邁向自我肯定的重要旅程。';
-      const tipText = evalRes ? `【實用因應指引】${evalRes.tip}` : '【實用因應指引】遇到挑釁時先保護安全，讓信任的大人介入，記得身邊永遠有人願意支持你。';
+      if (isCompleted && evalRes) {
+        // 【大結局已通關】：完整繪製心靈蛻變主文與專屬心靈給力站小叮嚀
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#875108';
+        ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
+        ctx.fillText('🌱 旅程總結與心靈蛻變', 72, tipBoxY + 34);
 
-      let nextY = drawWrappedText(insightText, 72, tipBoxY + 65, 650, 24, '14.5px "Microsoft JhengHei", Arial, sans-serif', '#3a2d1f');
-      drawWrappedText(tipText, 72, nextY + 8, 650, 24, 'bold 14px "Microsoft JhengHei", Arial, sans-serif', '#965a0b');
+        let nextY = drawWrappedText(evalRes.insight, 72, tipBoxY + 68, 650, 24, '14.5px "Microsoft JhengHei", Arial, sans-serif', '#3a2d1f');
+        drawWrappedText(`【心靈給力站・小叮嚀】${evalRes.tip}`, 72, nextY + 12, 650, 24, 'bold 14px "Microsoft JhengHei", Arial, sans-serif', '#965a0b');
+      } else {
+        // 【旅程進行中】：100% 同步網頁版 #ending-story 現況，不劇透大結局評語
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#4a3319';
+        ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
+        ctx.fillText('🌱 當前旅程探索狀態', 72, tipBoxY + 34);
+
+        const currentQuestText = GameState.quest.text || '正於校園中進行探索與互動。';
+        let nextY = drawWrappedText(`當前主線進度：${currentQuestText}`, 72, tipBoxY + 70, 650, 25, '15px "Microsoft JhengHei", Arial, sans-serif', '#2c2319');
+        nextY = drawWrappedText('你可以隨時點擊「返回遊戲繼續旅程」回到校園中操作與探索。', 72, nextY + 8, 650, 24, '14.5px "Microsoft JhengHei", Arial, sans-serif', '#6b5845');
+        drawWrappedText('✦ 溫馨提示：完整的五維心靈成長評語、榮譽稱號與心靈給力站寄語，將於完成五日校園探索大結局時正式解鎖！', 72, nextY + 18, 650, 24, 'bold 13.5px "Microsoft JhengHei", Arial, sans-serif', '#b36a10');
+      }
 
       // 8. 底部求助資源與版權日期
       const footerY = 975;
@@ -5626,7 +5640,7 @@
       ctx.textAlign = 'center';
       ctx.fillStyle = '#6d5a47';
       ctx.font = 'bold 13px "Microsoft JhengHei", Arial, sans-serif';
-      ctx.fillText('🤝 溫暖陪伴與求助專線：教育部防制霸凌專線 1953  ｜  衛福部安心專線 1925  ｜  兒福聯盟 0800-003-123', 400, footerY + 30);
+      ctx.fillText('溫暖陪伴與求助專線：教育部防制霸凌專線 1953  ｜  衛福部安心專線 1925  ｜  兒福聯盟 0800-003-123', 400, footerY + 30);
 
       const dateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
       ctx.fillStyle = '#9e8a75';
