@@ -6,6 +6,13 @@
 
 ---
 
+## 🚀 線上即玩連結（GitHub Pages）
+
+* 💻 **電腦專用版**：[https://yoyo114415-lang.github.io/dawn-academy/](https://yoyo114415-lang.github.io/dawn-academy/)  
+* 📱 **手機／平板觸控專用版**：[https://yoyo114415-lang.github.io/dawn-academy/mobile.html](https://yoyo114415-lang.github.io/dawn-academy/mobile.html)  
+
+---
+
 ## 🌟 遊戲介紹
 
 《破曉學園》是一款基於純前端技術開發的 2D 校園 RPG 探索網頁遊戲。玩家將化身為破曉學園的學生，透過沉浸式的第一人稱視角與多線性抉擇，體驗並面對校園中可能遭遇的人際衝突與言語排擠。
