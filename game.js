@@ -5276,7 +5276,7 @@
     // ========================================================================
     // 配置 Google Apps Script Web App 服務端點
     // 祐仁部署完成後，可將發布之 Web App URL 填入此處或透過本地儲存自動載入
-    GAS_SERVICE_URL: 'https://script.google.com/macros/s/AKfycbz_YOUR_GAS_DEPLOYMENT_ID/exec',
+    GAS_SERVICE_URL: 'https://script.google.com/macros/s/AKfycbzhhglIMJJnyPpJss5-WnxAiavVA6Hv-mMr5eVM5JV7NduAWmwv3g8L54XjIaPO5W0w/exec',
 
     // 核心繪圖引擎：動態生成高解析度心靈成長證書圖卡 (800 x 1140 像素)
     generateEndingReportCard() {
