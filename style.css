@@ -1872,3 +1872,15 @@ body {
   color: #8c7760;
   line-height: 1.5;
 }
+
+.ending-in-progress-tip {
+  background: #fdfaf3;
+  border: 1.5px dashed #d9b48f;
+  border-radius: 16px;
+  padding: 16px 20px;
+  text-align: center;
+  color: #7a6651;
+  font-size: 14px;
+  line-height: 1.7;
+  margin-bottom: 24px;
+}

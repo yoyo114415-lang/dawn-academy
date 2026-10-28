@@ -9,7 +9,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://script.google.com https://script.googleusercontent.com data: blob:;">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <link rel="stylesheet" href="style.css?v=20261028_v1">
+  <link rel="stylesheet" href="style.css?v=20261028_v2">
 </head>
 <body>
 
@@ -318,7 +318,7 @@
         </div>
 
         <!-- 結算成果圖卡保存與 Gmail 寄送區塊 -->
-        <div class="ending-export-card">
+        <div class="ending-export-card" style="display: none;">
           <div class="ending-export-header">
             <div class="ending-export-title">💌 收藏我的專屬心靈成長圖卡</div>
             <div class="ending-export-subtitle">將你的五維心靈雷達圖、專屬稱號、心理成長分數與五日心情日記合成為精緻圖卡，可免費寄送到你的 Gmail 信箱保存，或直接下載至裝置！</div>
@@ -349,6 +349,12 @@
           <!-- 寄送狀態即時提示 -->
           <div id="email-send-status" class="email-send-status" style="display: none;"></div>
           <div class="email-privacy-note">🔒 資安與個資保護承諾：本系統僅調用 Google 官方發信服務，寄完即焚，絕不保留、儲存你的 Email，安全無毒。</div>
+        </div>
+
+        <!-- 旅程進行中未通關提示 (通關後自動隱藏，展現圖卡領取卡片) -->
+        <div id="ending-in-progress-tip" class="ending-in-progress-tip" style="display: none;">
+          🔒 <strong>專屬心靈成長圖卡將於完成五日校園探索通關後正式解鎖</strong><br>
+          你可以隨時點擊下方「返回遊戲繼續旅程」回到校園中操作與體驗！
         </div>
 
         <!-- 求助資源與溫暖陪伴 -->
@@ -434,6 +440,6 @@
 
   <!-- 載入劇本資料庫與核心遊戲邏輯 (含版本號保證快取即時更新) -->
   <script src="dialogues.js?v=20261024_v1"></script>
-  <script src="game.js?v=20261028_v3"></script>
+  <script src="game.js?v=20261028_v4"></script>
 </body>
 </html>

@@ -4841,6 +4841,16 @@
       // 雙重保證延遲渲染，確保 Canvas 在 CSS 顯現後必定繪出
       requestAnimationFrame(() => this.drawRadarChart(s));
       setTimeout(() => this.drawRadarChart(s), 60);
+
+      // 控制圖卡領取區塊：僅在完成全劇本通關（大結局）後開放領取與寄送
+      const exportCard = document.querySelector('.ending-export-card');
+      const inProgressTip = document.getElementById('ending-in-progress-tip');
+      if (exportCard) {
+        exportCard.style.display = isCompleted ? 'block' : 'none';
+      }
+      if (inProgressTip) {
+        inProgressTip.style.display = isCompleted ? 'none' : 'block';
+      }
     },
 
     // 渲染結算畫面：雷達圖下方 5 天橫向時間軸 (第一天到第五天橫排，表情在下面橫排)
@@ -5650,8 +5660,13 @@ generateEndingReportCard() {
       return canvas;
     },
 
-    // 一鍵下載圖卡到玩家裝置
+    // 一鍵下載圖卡到玩家裝置 (僅限玩完遊戲通關後開放)
     downloadReportCard() {
+      const isCompleted = GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10;
+      if (!isCompleted) {
+        this.showToast('🔒 專屬心靈圖卡將於完成五日校園探索通關後解鎖領取！');
+        return;
+      }
       SoundFX.click();
       const canvas = this.generateEndingReportCard();
       const dataUrl = canvas.toDataURL('image/png');
@@ -5666,8 +5681,13 @@ generateEndingReportCard() {
       this.showToast('✅ 成果圖卡已下載至你的裝置！');
     },
 
-    // 寄送成果圖卡至玩家的 Gmail
+    // 寄送成果圖卡至玩家的 Gmail (僅限玩完遊戲通關後開放)
     sendReportCardEmail() {
+      const isCompleted = GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10;
+      if (!isCompleted) {
+        this.showToast('🔒 專屬心靈圖卡將於完成五日校園探索通關後解鎖領取！');
+        return;
+      }
       const emailInput = document.getElementById('input-player-email');
       const statusEl = document.getElementById('email-send-status');
       const sendBtn = document.getElementById('btn-send-email');
