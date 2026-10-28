@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>破曉學園 ｜ 手機與平板專用版</title>
+  <meta name="description" content="教育部防制校園霸凌教育互動探索遊戲，手機與平板專屬觸控最佳化版本。">
+  <!-- 純淨無外連安全防護：無第三方追蹤器、無廣告代碼、零個資外洩 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://script.google.com https://script.googleusercontent.com data: blob:;">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="stylesheet" href="mobile.css?v=20261028_m1">
+</head>
+<body>
+
+  <!-- 主遊戲容器 (全螢幕自適應視口) -->
+  <div id="game-wrapper">
+
+    <!-- 1. 遊戲封面首頁 -->
+    <div id="screen-cover" class="screen-panel active" style="background-image: url('角色/封面.png');">
+      <div class="cover-content">
+        <div class="cover-device-badge">📱 手機・平板觸控專屬版</div>
+        <h1 class="cover-title">破曉學園</h1>
+        <p class="cover-subtitle">受凌者主線・校園人際與情緒覺察互動探索遊戲</p>
+
+        <div class="cover-buttons">
+          <button id="btn-start-game" class="btn-main">開始新遊戲</button>
+          <button id="btn-continue-game" class="btn-sub" disabled>繼續旅程 (無存檔)</button>
+          <button id="btn-info" class="btn-sub">遊戲說明與求助資源</button>
+        </div>
+
+        <div class="cover-footer">
+          教育部防制霸凌專線 1953 ｜ 專案設計者：張祐仁、謝佳緯 ｜ 行動觸控增強版
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 主角造型選擇頁 (行動端自適應滾動與微縮排版) -->
+    <div id="screen-select" class="screen-panel">
+      <div class="select-header">
+        <h2 class="select-title">選擇你在破曉學園的化身</h2>
+        <p class="select-desc">請點選外觀（可雙擊卡片直接開始），三個角色劇情與數值完全一致</p>
+      </div>
+
+      <div class="cards-container">
+        <!-- 男孩卡片 -->
+        <div class="character-card selected" data-gender="boy">
+          <div class="card-portrait-box">
+            <img src="角色/主角_男孩.png" alt="主角（男孩）" class="card-portrait-img">
+          </div>
+          <canvas id="preview-boy" class="card-preview-canvas" width="64" height="64"></canvas>
+          <h3 class="card-name">主角（男孩）</h3>
+          <p class="card-tags">深棕短髮 ｜ 米白制服<br>深藍短褲 ｜ 藍灰雙肩書包</p>
+          <div class="card-tap-hint">雙擊直接出發 ➜</div>
+        </div>
+
+        <!-- 女孩卡片 -->
+        <div class="character-card" data-gender="girl">
+          <div class="card-portrait-box">
+            <img src="角色/主角_女孩.png" alt="主角（女孩）" class="card-portrait-img">
+          </div>
+          <canvas id="preview-girl" class="card-preview-canvas" width="64" height="64"></canvas>
+          <h3 class="card-name">主角（女孩）</h3>
+          <p class="card-tags">黑茶及肩短髮 ｜ 米白制服<br>深藍百褶裙 ｜ 藍灰雙肩書包</p>
+          <div class="card-tap-hint">雙擊直接出發 ➜</div>
+        </div>
+
+        <!-- 中性卡片 -->
+        <div class="character-card" data-gender="neutral">
+          <div class="card-portrait-box">
+            <img src="角色/主角_中性.png" alt="主角（中性）" class="card-portrait-img">
+          </div>
+          <canvas id="preview-neutral" class="card-preview-canvas" width="64" height="64"></canvas>
+          <h3 class="card-name">主角（中性）</h3>
+          <p class="card-tags">俐落短髮 ｜ 拼色體育服<br>運動長褲 ｜ 輕快活力邁步</p>
+          <div class="card-tap-hint">雙擊直接出發 ➜</div>
+        </div>
+      </div>
+
+      <div class="select-footer-actions">
+        <button id="btn-back-to-cover" class="btn-sub">返回封面</button>
+        <button id="btn-confirm-char" class="btn-main">就決定是你了，開始探索！</button>
+      </div>
+    </div>
+
+    <!-- 3. 遊戲主畫面 (地圖探索 + HUD + 劇情對話) -->
+    <div id="screen-game" class="screen-panel">
+
+      <!-- 頂部五維數值面板 HUD (含行動端抽屜展開機制) -->
+      <div id="hud-bar">
+        <div class="hud-location-badge">
+          <span id="hud-day" class="hud-day">Day 1 清晨自習</span>
+          <span id="hud-scene-name" class="hud-scene-name">S3 班級教室</span>
+        </div>
+
+        <!-- 行動端精簡核心數值膠囊 (點擊可展開完整五維面板) -->
+        <div id="hud-stress-capsule" class="hud-stress-capsule" title="點擊查看完整五維心理數值">
+          <span class="capsule-label">壓力</span>
+          <div class="capsule-bar-track">
+            <div id="capsule-bar-fill" class="capsule-bar-fill fill-stress stress-low" style="width: 50%;"></div>
+          </div>
+          <span id="capsule-stress-val" class="capsule-val">50</span>
+          <span class="capsule-expand-icon">▼</span>
+        </div>
+
+        <!-- 五維數值長條圖 (電腦/平板展開檢視) -->
+        <div id="hud-stats-group" class="hud-stats-group">
+          <!-- 壓力值 (核心預警) -->
+          <div class="stat-item" title="壓力值：過高會引發心神緊繃，達100需進行深呼吸減壓">
+            <div class="stat-item-header">
+              <span class="stat-name-label">壓力值 <span id="delta-stress" class="stat-delta"></span></span>
+              <span id="stat-val-stress">50 / 100</span>
+            </div>
+            <div class="stat-bar-track">
+              <div id="stat-bar-stress" class="stat-bar-fill fill-stress stress-low" style="width: 50%;"></div>
+            </div>
+          </div>
+
+          <!-- 同儕關係值 -->
+          <div class="stat-item" title="同儕關係值">
+            <div class="stat-item-header">
+              <span class="stat-name-label">同儕關係值 <span id="delta-peer" class="stat-delta"></span></span>
+              <span id="stat-val-peer">30 / 100</span>
+            </div>
+            <div class="stat-bar-track">
+              <div id="stat-bar-peer" class="stat-bar-fill fill-peer" style="width: 30%;"></div>
+            </div>
+          </div>
+
+          <!-- 勇氣值 -->
+          <div class="stat-item" title="勇氣值">
+            <div class="stat-item-header">
+              <span class="stat-name-label">勇氣值 <span id="delta-courage" class="stat-delta"></span></span>
+              <span id="stat-val-courage">40 / 100</span>
+            </div>
+            <div class="stat-bar-track">
+              <div id="stat-bar-courage" class="stat-bar-fill fill-courage" style="width: 40%;"></div>
+            </div>
+          </div>
+
+          <!-- 安全感 -->
+          <div class="stat-item" title="安全感">
+            <div class="stat-item-header">
+              <span class="stat-name-label">安全感 <span id="delta-safety" class="stat-delta"></span></span>
+              <span id="stat-val-safety">35 / 100</span>
+            </div>
+            <div class="stat-bar-track">
+              <div id="stat-bar-safety" class="stat-bar-fill fill-safety" style="width: 35%;"></div>
+            </div>
+          </div>
+
+          <!-- 自我肯定值 -->
+          <div class="stat-item" title="自我肯定值">
+            <div class="stat-item-header">
+              <span class="stat-name-label">自我肯定值 <span id="delta-self" class="stat-delta"></span></span>
+              <span id="stat-val-self">30 / 100</span>
+            </div>
+            <div class="stat-bar-track">
+              <div id="stat-bar-self" class="stat-bar-fill fill-self" style="width: 30%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-actions">
+          <button id="btn-hud-trophy" class="btn-icon" title="隨時查看五維心靈成長雷達圖" style="background:#fff2d6; border-color:#d49b2d; font-size:16px;">🏆</button>
+          <button id="btn-toggle-sound" class="btn-icon" title="切換音效">🔊</button>
+          <button id="btn-home" class="btn-icon" title="返回首頁">🏠</button>
+        </div>
+      </div>
+
+      <!-- 目標指引任務列 (含左上方動態指引黃色箭頭) -->
+      <div id="quest-banner">
+        <div id="hud-nav-compass" class="nav-compass" title="目標方向指針">
+          <div id="nav-arrow-pointer" class="nav-arrow">▲</div>
+        </div>
+        <span class="quest-badge">🎯 目標指引</span>
+        <span id="quest-text" class="quest-text">請依左上角黃色指針，前往發光的座位查看</span>
+      </div>
+
+      <!-- 2D 畫布探索視窗 (支援點擊地面尋路走動) -->
+      <div id="canvas-viewport">
+        <canvas id="game-canvas"></canvas>
+        <div id="interact-prompt">靠近目標，點擊右下角【互動】</div>
+
+        <!-- 點擊地面移動的波紋漣漪回饋指示器 -->
+        <div id="tap-destination-indicator" class="tap-destination-indicator"></div>
+
+        <!-- RPG 任務追蹤面板 (行動端支援收合/展開) -->
+        <div id="quest-tracker-panel" class="quest-tracker-panel collapsed">
+          <button id="btn-toggle-quest-panel" class="btn-toggle-quest" title="收合/展開任務日誌">📜</button>
+          <div id="quest-toggle-tooltip" style="display: none;"></div>
+          <div class="quest-panel-inner">
+            <div class="quest-panel-header">
+              <span class="quest-panel-title">📜 任務日誌・QUEST</span>
+            </div>
+            <div class="quest-main-section">
+              <div class="quest-type-badge">◆ 主線任務</div>
+              <div id="quest-tracker-title" class="quest-tracker-title">【主線一】清晨的惡意紙條</div>
+              <div id="quest-tracker-desc" class="quest-tracker-desc">清晨教室格外寂靜，走回發光的個人座位，查看桌上被惡作劇留下的嘲笑紙條與垃圾。</div>
+              <div class="quest-tracker-meta">
+                <div id="quest-tracker-objective" class="quest-tracker-target">▶ 目標：走向座位並點擊【互動】檢查</div>
+                <div id="quest-tracker-location" class="quest-tracker-loc">▶ 地點：S3 班級教室 (發光處)</div>
+              </div>
+              <!-- 點擊開啟地面導航路線按鈕 -->
+              <button id="btn-quest-navigate" class="btn-quest-navigate" title="在地面浮現前往目標的金色導航路徑">
+                <span class="nav-btn-icon">📍</span>
+                <span id="nav-btn-text">點擊開啟地面導航路線</span>
+              </button>
+            </div>
+            <div class="quest-side-section">
+              <div class="quest-side-badge">◇ 觸控操作提示</div>
+              <div class="quest-side-desc">👉 <strong>點擊地面任意處</strong>：主角自動走過去<br>🕹️ <strong>左下角方向鍵</strong>：按住或滑動控制移動<br>✨ <strong>右下角互動鍵</strong>：靠近發光點或同學即可對話</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 行動裝置虛擬按鈕 (常駐支援平板與手機，滑動防暴衝) -->
+      <div id="mobile-controls">
+        <div class="dpad" id="virtual-dpad">
+          <div></div>
+          <button class="dpad-btn" id="dpad-up" data-dir="up">▲</button>
+          <div></div>
+          <button class="dpad-btn" id="dpad-left" data-dir="left">◀</button>
+          <div class="dpad-center-pad">●</div>
+          <button class="dpad-btn" id="dpad-right" data-dir="right">▶</button>
+          <div></div>
+          <button class="dpad-btn" id="dpad-down" data-dir="down">▼</button>
+          <div></div>
+        </div>
+        <button class="mobile-action-btn" id="btn-mobile-interact">互動</button>
+      </div>
+
+      <!-- 視覺小說對話與立繪圖層 (行動端全螢幕點擊推進與滾動防切斷) -->
+      <div id="dialogue-layer">
+        <!-- 左右立繪特寫 -->
+        <div class="portraits-stage">
+          <!-- 左側：主角立繪 -->
+          <div id="portrait-player" class="portrait-wrapper active">
+            <img id="img-portrait-player" src="角色/主角_男孩.png" alt="主角" class="portrait-img">
+          </div>
+          <!-- 右側：NPC 立繪 -->
+          <div id="portrait-npc" class="portrait-wrapper">
+            <img id="img-portrait-npc" src="角色/同學甲.png" alt="對話對象" class="portrait-img">
+          </div>
+        </div>
+
+        <!-- 對話框本體 (支援垂直滾動，確保選項 C 絕不被截斷) -->
+        <div class="dialogue-box" id="dialogue-box">
+          <div class="dialogue-header-bar">
+            <div id="speaker-name" class="speaker-tag">同學甲</div>
+          </div>
+
+          <!-- 前情對話滾動回顧區（抉擇時刻顯示，可自由滾動查看） -->
+          <div id="dialogue-history-container" class="dialogue-history-container" style="display: none;">
+            <div class="dialogue-history-header">📜 前情對話回顧（可滑動查看完整情境）：</div>
+            <div id="dialogue-history-list" class="dialogue-history-list"></div>
+          </div>
+
+          <div id="dialogue-content" class="dialogue-text">清晨的校園還有點昏暗。你走進教室，發現座位上有一張嘲笑你的紙條。</div>
+          <div id="dialogue-prompt" class="dialogue-continue-prompt">點擊任意處繼續 ▼</div>
+
+          <!-- 選項清單 (A, B, C) -->
+          <div id="choices-container" class="choices-container">
+            <!-- 動態插入選項 -->
+          </div>
+
+          <!-- 結算反饋與心靈小提醒 -->
+          <div id="feedback-card" class="feedback-card">
+            <div id="stat-changes-list" class="stat-changes-list"></div>
+            <div id="mindful-tip-text" class="mindful-tip"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 4. 壓力過載 4-6 深呼吸減壓小遊戲 Modal -->
+    <div id="modal-breathing" class="modal-backdrop">
+      <div class="breathing-card">
+        <h3 class="breathing-header">心靈停泊處・深呼吸調節</h3>
+        <p id="breathing-dialogue" class="breathing-sub">「先坐下來，我們一起慢慢呼吸。你已經很努力了。」</p>
+
+        <div class="breathing-circle-outer">
+          <div id="breathing-bubble" class="breathing-circle-inner">吸氣</div>
+        </div>
+
+        <div id="breathing-status" class="breathing-progress-text">第 1 / 3 次深呼吸循環（吸氣 4 秒，吐氣 6 秒）</div>
+        <button id="btn-finish-breathing" class="btn-main" style="display:none;">平復完成，重返校園</button>
+      </div>
+    </div>
+
+    <!-- 5. 遊戲大結局結算全螢幕畫面 (行動端自適應單欄流 + 響應式雷達圖) -->
+    <div id="screen-ending" class="screen-panel">
+      <div class="ending-container">
+        <!-- 頂部榮譽標題 (右上角附帶快速返回遊戲按鈕) -->
+        <div class="ending-header-section" style="position: relative;">
+          <button id="btn-ending-close-x" class="btn-icon" title="關閉並返回遊戲" style="position: absolute; right: 0; top: 0; font-size: 16px; background: #fdf6ec; border-color: #ebdcc5;">✕</button>
+          <div id="ending-badge" class="ending-badge">評估完成・陽光破曉</div>
+          <h1 id="ending-title" class="ending-main-title">陽光破曉：走出陰霾</h1>
+        </div>
+
+        <!-- 自適應單欄／雙欄排版 -->
+        <div class="ending-content-grid">
+          <div class="ending-left-col">
+            <div class="ending-story-card">
+              <h3 class="ending-section-title">🌱 旅程總結與心靈蛻變</h3>
+              <p id="ending-story" class="ending-story-text">你在面對同儕困境時展現了勇氣，尋求值得信任的師長支援，重獲安全感與人際信任。</p>
+            </div>
+
+            <div class="ending-stats-summary-card">
+              <h3 class="ending-section-title">📈 五維心理成長數值總覽</h3>
+              <div id="ending-stats-breakdown" class="ending-breakdown-list">
+                <!-- 動態注入各項數值條 -->
+              </div>
+            </div>
+          </div>
+
+          <div class="ending-right-col">
+            <div class="ending-radar-wrapper">
+              <div class="radar-box-title">📊 五維心靈成長雷達圖</div>
+              <div class="radar-canvas-container">
+                <canvas id="ending-radar-chart" width="380" height="320"></canvas>
+              </div>
+              <div class="radar-legend-text">✦ 綜合各指標數值繪製（放鬆度為 100 - 壓力值），呈現面對挑戰的心靈防護傘</div>
+            </div>
+
+            <!-- 每日心情日記 (支援觸控滑動) -->
+            <div class="ending-mood-card">
+              <div class="ending-section-title" style="margin-bottom: 12px; font-size: 16px;">📅 每日心情日記（五天心靈歷程）</div>
+              <div class="timeline-scroll-wrapper">
+                <div id="ending-mood-timeline" class="ending-mood-timeline">
+                  <!-- 動態注入 5 天橫排表情與天數 -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 結算成果圖卡保存與 Gmail 寄送區塊 (正式通關後自動解鎖) -->
+        <div class="ending-export-card" style="display: none;">
+          <div class="ending-export-header">
+            <div class="ending-export-title">💌 收藏我的專屬心靈成長圖卡</div>
+            <div class="ending-export-subtitle">將你的五維心靈雷達圖、專屬稱號、心理成長分數與五日心情日記合成為精緻圖卡，可免費寄送到你的 Gmail 信箱保存，或直接下載至裝置！</div>
+          </div>
+          
+          <div class="ending-export-body">
+            <!-- Gmail 發送表單 -->
+            <div class="export-email-form">
+              <div class="email-input-wrap">
+                <span class="email-input-icon">📮</span>
+                <input type="email" id="input-player-email" class="input-player-email" placeholder="請輸入你的 Gmail 信箱 (例如 student@gmail.com)" autocomplete="email" />
+              </div>
+              <button id="btn-send-email" class="btn-main btn-export-send">
+                <span class="btn-send-icon">📧</span>
+                <span id="btn-send-text">寄送成果到我的 Gmail</span>
+              </button>
+            </div>
+            
+            <div class="export-divider"><span>或</span></div>
+            
+            <!-- 本地直接下載按鈕 -->
+            <button id="btn-download-card" class="btn-sub btn-export-download">
+              <span class="btn-download-icon">📥</span>
+              <span id="btn-download-text">直接下載成果圖卡 (PNG)</span>
+            </button>
+          </div>
+
+          <!-- 寄送狀態即時提示 -->
+          <div id="email-send-status" class="email-send-status" style="display: none;"></div>
+          <div class="email-privacy-note">🔒 資安與個資保護承諾：本系統僅調用 Google 官方發信服務，寄完即焚，絕不保留、儲存你的 Email，安全無毒。</div>
+        </div>
+
+        <!-- 旅程進行中未通關提示 (通關後自動隱藏，展現圖卡領取卡片) -->
+        <div id="ending-in-progress-tip" class="ending-in-progress-tip" style="display: none;">
+          🔒 <strong>專屬心靈成長圖卡將於完成五日校園探索通關後正式解鎖</strong><br>
+          你可以隨時點擊下方「返回遊戲繼續旅程」回到校園中操作與體驗！
+        </div>
+
+        <!-- 求助資源與溫暖陪伴 -->
+        <div class="helplines-box">
+          <div class="helplines-title">🤝 溫暖陪伴與求助資源（永遠有人願意接住你）</div>
+          <div class="helpline-item">📞 <strong>教育部防制校園霸凌專線</strong>：1953（24 小時免付費）</div>
+          <div class="helpline-item">📞 <strong>衛福部安心專線</strong>：1925（依舊愛我）</div>
+          <div class="helpline-item">📞 <strong>兒童福利聯盟諮詢專線</strong>：0800-003-123</div>
+        </div>
+
+        <!-- 底部操作按鈕 -->
+        <div class="ending-footer-actions">
+          <button id="btn-ending-back-to-game" class="btn-sub" style="min-width: 170px; background:#e8f4fd; color:#1b65a5; border-color:#a8d1f2;">◀ 返回遊戲繼續旅程</button>
+          <button id="btn-restart-game" class="btn-main" style="min-width: 180px;">重新體驗旅程</button>
+          <button id="btn-ending-to-cover" class="btn-sub" style="min-width: 140px;">返回封面首頁</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. 專案說明與資安宣言 Modal -->
+    <div id="modal-info" class="modal-backdrop">
+      <div class="ending-card" style="max-width: 580px;">
+        <h3 class="ending-title" style="font-size:22px; margin-bottom:14px;">《破曉學園》遊戲設計與理念</h3>
+        <div style="font-size:13.5px; line-height:1.8; color:var(--text-sub); text-align:left; margin-bottom:18px;">
+          <p>✦ <strong>教育目標</strong>：專為國小中高年級設計之校園探索遊戲，引導受凌學生在面對同儕壓力、言語嘲弄與孤立時，學習非暴力因應、自我情緒調節與尋求信任大人協助。</p>
+          <p style="margin-top:8px;">✦ <strong>零資安風險保證</strong>：本遊戲為 100% 純前端靜態程式，不蒐集任何姓名、帳號或個人機敏資料，無病毒與惡意腳本，所有進度僅儲存於本地瀏覽器。</p>
+          <p style="margin-top:8px;">✦ <strong>觸控操作指引</strong>：可點擊地面任意處尋路移動，或使用左下角虛擬方向鍵；靠近對話目標點擊右下角【互動】按鈕；點擊對話框任意處可推進劇情。</p>
+        </div>
+        <button id="btn-close-info" class="btn-main" style="min-width:160px;">我知道了</button>
+      </div>
+    </div>
+
+    <!-- 7. 跨天轉場與放學標題卡 Modal (黑底白字・放學鐘聲) -->
+    <div id="modal-day-transition" class="transition-backdrop">
+      <div class="transition-content">
+        <div id="trans-badge" class="trans-badge">第一天・放學</div>
+        <h2 id="trans-title" class="trans-title">下課鐘聲響起，今天辛苦了。</h2>
+        <p id="trans-subtitle" class="trans-subtitle">收拾好書包，回家好好休息。</p>
+        <div id="trans-hint" class="trans-hint">點擊任意處繼續 ▼</div>
+      </div>
+    </div>
+
+    <!-- 8. 每日放學轉場心情札記選擇 Modal (六宮格・上3下3去背表情) -->
+    <div id="modal-mood-checkin" class="modal-backdrop">
+      <div class="mood-checkin-card">
+        <div class="mood-checkin-header">
+          <span id="mood-checkin-badge" class="mood-checkin-badge">第一天・心靈沉澱</span>
+          <h2 id="mood-checkin-title" class="mood-checkin-title">🌱 今天結束了・今天的心情是什麼呢？</h2>
+          <p id="mood-checkin-desc" class="mood-checkin-desc">玩完今天的這段經歷，請點選一個最符合你今天感受的表情：</p>
+        </div>
+
+        <div id="mood-options-grid" class="mood-options-grid">
+          <!-- 上排 3 個 + 下排 3 個去背表情按鈕 -->
+          <button class="mood-btn" data-mood="sad" type="button" title="難過委屈">
+            <img src="圖片/表情/mood_sad.png" alt="難過委屈" class="mood-btn-img" />
+            <span class="mood-btn-name">難過委屈</span>
+          </button>
+          <button class="mood-btn" data-mood="anxious" type="button" title="緊張害怕">
+            <img src="圖片/表情/mood_anxious.png" alt="緊張害怕" class="mood-btn-img" />
+            <span class="mood-btn-name">緊張害怕</span>
+          </button>
+          <button class="mood-btn" data-mood="confused" type="button" title="有些迷茫">
+            <img src="圖片/表情/mood_confused.png" alt="有些迷茫" class="mood-btn-img" />
+            <span class="mood-btn-name">有些迷茫</span>
+          </button>
+          <button class="mood-btn" data-mood="relieved" type="button" title="感到安心">
+            <img src="圖片/表情/mood_relieved.png" alt="感到安心" class="mood-btn-img" />
+            <span class="mood-btn-name">感到安心</span>
+          </button>
+          <button class="mood-btn" data-mood="warm" type="button" title="溫暖釋懷">
+            <img src="圖片/表情/mood_warm.png" alt="溫暖釋懷" class="mood-btn-img" />
+            <span class="mood-btn-name">溫暖釋懷</span>
+          </button>
+          <button class="mood-btn" data-mood="brave" type="button" title="充滿勇氣">
+            <img src="圖片/表情/mood_brave.png" alt="充滿勇氣" class="mood-btn-img" />
+            <span class="mood-btn-name">充滿勇氣</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 載入共用劇本資料庫與行動端專屬核心遊戲邏輯 -->
+  <script src="dialogues.js?v=20261024_v1"></script>
+  <script src="mobile.js?v=20261028_m1"></script>
+</body>
+</html>
