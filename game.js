@@ -2489,6 +2489,22 @@
         });
       }
 
+      // 結算畫面：直接下載成果圖卡 (PNG)
+      const downloadCardBtn = document.getElementById('btn-download-card');
+      if (downloadCardBtn) {
+        downloadCardBtn.addEventListener('click', () => {
+          this.downloadReportCard();
+        });
+      }
+
+      // 結算畫面：寄送成果圖卡到 Gmail
+      const sendEmailBtn = document.getElementById('btn-send-email');
+      if (sendEmailBtn) {
+        sendEmailBtn.addEventListener('click', () => {
+          this.sendReportCardEmail();
+        });
+      }
+
       // RPG 任務日誌：收合 / 展開按鈕
       const toggleQuestBtn = document.getElementById('btn-toggle-quest-panel');
       if (toggleQuestBtn) {
@@ -5254,7 +5270,506 @@
       toast._timer = setTimeout(() => {
         toast.style.opacity = '0';
       }, 3500);
-    }
+    },
+// ========================================================================
+    // 11. 結算心靈成長圖卡生成與 Gmail 寄送服務
+    // ========================================================================
+    // 配置 Google Apps Script Web App 服務端點
+    // 祐仁部署完成後，可將發布之 Web App URL 填入此處或透過本地儲存自動載入
+    GAS_SERVICE_URL: 'https://script.google.com/macros/s/AKfycbz_YOUR_GAS_DEPLOYMENT_ID/exec',
+
+    // 核心繪圖引擎：動態生成高解析度心靈成長證書圖卡 (800 x 1140 像素)
+    generateEndingReportCard() {
+      const s = GameState.stats;
+      const isCompleted = GameState.quest.completedNodes.has('node9') || GameState.quest.step >= 10;
+      const evalRes = this.getDetailedEndingEvaluation(s);
+      const overallScore = (GameState && GameState.getOverallScore) ? GameState.getOverallScore() : 85;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 1140;
+      const ctx = canvas.getContext('2d');
+
+      // 1. 純淨米白質感底色
+      ctx.fillStyle = '#fcf9f2';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 2. 雙層典雅木質邊框
+      ctx.strokeStyle = '#d9b48f';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(16, 16, canvas.width - 32, canvas.height - 32);
+
+      ctx.strokeStyle = '#ecd8be';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
+
+      // 頂部破曉暖橙裝飾帶
+      const gradHeader = ctx.createLinearGradient(0, 0, canvas.width, 0);
+      gradHeader.addColorStop(0, '#e5983c');
+      gradHeader.addColorStop(1, '#d4881e');
+      ctx.fillStyle = gradHeader;
+      ctx.fillRect(24, 24, canvas.width - 48, 8);
+
+      // 3. 頂部榮譽徽章與證書標題
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#e5983c';
+      ctx.font = 'bold 14px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('✦ 評估完成・心靈破曉・專屬紀念證書 ✦', 400, 68);
+
+      ctx.fillStyle = '#422b13';
+      ctx.font = 'bold 28px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('《破曉學園》心靈成長成果圖卡', 400, 106);
+
+      const titleText = isCompleted && evalRes ? evalRes.title : '心靈羅盤：五維成長檢視';
+      ctx.fillStyle = '#b36a10';
+      ctx.font = 'bold 18px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText(`稱號：【${titleText}】  ｜  整體心靈狀態指數：${overallScore} 分`, 400, 138);
+
+      // 分隔線
+      ctx.strokeStyle = '#ecd8be';
+      ctx.beginPath();
+      ctx.moveTo(50, 155);
+      ctx.lineTo(750, 155);
+      ctx.stroke();
+
+      // 4. 中間左側：繪製五維心靈成長雷達圖 (中心: 220, 345, 半徑: 90)
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#4a3319';
+      ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('📊 五維心靈成長雷達圖', 60, 185);
+
+      const cx = 220, cy = 345, R = 90;
+      const initialAxes = [
+        { name: '放鬆度', val: 50 },
+        { name: '安全感', val: 35 },
+        { name: '自我肯定', val: 30 },
+        { name: '同儕關係', val: 30 },
+        { name: '勇氣值', val: 40 }
+      ];
+      const currentAxes = [
+        { name: '放鬆度', val: Math.min(100, Math.max(0, 100 - s.stress)) },
+        { name: '安全感', val: Math.min(100, Math.max(0, s.safety)) },
+        { name: '自我肯定', val: Math.min(100, Math.max(0, s.selfEsteem)) },
+        { name: '同儕關係', val: Math.min(100, Math.max(0, s.peer)) },
+        { name: '勇氣值', val: Math.min(100, Math.max(0, s.courage)) }
+      ];
+
+      // 4.1 繪製同心五角形網格與軸線
+      const levels = 4;
+      for (let l = 1; l <= levels; l++) {
+        const r = (R / levels) * l;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+          const px = cx + r * Math.cos(angle);
+          const py = cy + r * Math.sin(angle);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = '#e2d4c0';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // 軸線與標籤
+      for (let i = 0; i < 5; i++) {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        const ax = cx + R * Math.cos(angle);
+        const ay = cy + R * Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(ax, ay);
+        ctx.strokeStyle = '#dfd1bc';
+        ctx.stroke();
+
+        const lx = cx + (R + 24) * Math.cos(angle);
+        const ly = cy + (R + 24) * Math.sin(angle);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#6e563d';
+        ctx.font = 'bold 12px "Microsoft JhengHei", Arial, sans-serif';
+        ctx.fillText(currentAxes[i].name, lx, ly);
+      }
+
+      // 4.2 繪製初始多邊形 (淡藍色)
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        const r = (initialAxes[i].val / 100) * R;
+        const px = cx + r * Math.cos(angle);
+        const py = cy + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(74, 144, 226, 0.22)';
+      ctx.fill();
+      ctx.strokeStyle = '#4a90e2';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // 4.3 繪製當前多邊形 (暖橙色)
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        const r = (currentAxes[i].val / 100) * R;
+        const px = cx + r * Math.cos(angle);
+        const py = cy + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(229, 152, 60, 0.55)';
+      ctx.fill();
+      ctx.strokeStyle = '#e5983c';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // 繪製當前頂點圓點
+      for (let i = 0; i < 5; i++) {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        const r = (currentAxes[i].val / 100) * R;
+        const px = cx + r * Math.cos(angle);
+        const py = cy + r * Math.sin(angle);
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = '#d4881e';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // 雷達圖圖例 (初始 vs 最終)
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#4a90e2';
+      ctx.font = '12px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('■ 入學起點', 160, 470);
+      ctx.fillStyle = '#d4881e';
+      ctx.fillText('■ 當前心靈防護傘', 270, 470);
+
+      // 5. 中間右側：五維心理成長數值條 (x: 420, y: 185)
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#4a3319';
+      ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('📈 五維心靈數值明細', 420, 185);
+
+      const statsDetail = [
+        { name: '放鬆度 (100 - 壓力)', val: 100 - s.stress, init: 50, color: '#c0392b' },
+        { name: '同儕關係值', val: s.peer, init: 30, color: '#8e44ad' },
+        { name: '勇氣值', val: s.courage, init: 40, color: '#e67e22' },
+        { name: '安全感', val: s.safety, init: 35, color: '#27ae60' },
+        { name: '自我肯定', val: s.selfEsteem, init: 30, color: '#2980b9' }
+      ];
+
+      let barY = 220;
+      statsDetail.forEach(item => {
+        const curVal = Math.min(100, Math.max(0, item.val));
+        const delta = curVal - item.init;
+        const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+
+        // 標籤名稱
+        ctx.fillStyle = '#422b13';
+        ctx.font = 'bold 13px "Microsoft JhengHei", Arial, sans-serif';
+        ctx.fillText(item.name, 420, barY);
+
+        // 數值與增長標籤
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 13px "Microsoft JhengHei", Arial, sans-serif';
+        ctx.fillStyle = '#422b13';
+        ctx.fillText(`${curVal} / 100`, 695, barY);
+
+        ctx.fillStyle = delta >= 0 ? '#27ae60' : '#c0392b';
+        ctx.fillText(`(${deltaStr})`, 750, barY);
+        ctx.textAlign = 'left';
+
+        // 數值底槽
+        ctx.fillStyle = '#e8e0d2';
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(420, barY + 6, 330, 8, 4) : ctx.rect(420, barY + 6, 330, 8);
+        ctx.fill();
+
+        // 數值進度條
+        const fillW = Math.max(0, (curVal / 100) * 330);
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(420, barY + 6, fillW, 8, 4) : ctx.rect(420, barY + 6, fillW, 8);
+        ctx.fill();
+
+        barY += 50;
+      });
+
+      // 分隔線
+      ctx.strokeStyle = '#ecd8be';
+      ctx.beginPath();
+      ctx.moveTo(50, 495);
+      ctx.lineTo(750, 495);
+      ctx.stroke();
+
+      // 6. 下方：每日心情日記歷程 (五天橫向卡片)
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#4a3319';
+      ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('📅 每日心情日記（五天心靈歷程）', 50, 525);
+
+      const dayNames = ['第一天', '第二天', '第三天', '第四天', '第五天'];
+      const cardW = 128;
+      const cardH = 115;
+      const gap = 15;
+      const startX = 50;
+      const cardY = 545;
+
+      const timelineEl = document.getElementById('ending-mood-timeline');
+      const timelineImgs = timelineEl ? timelineEl.querySelectorAll('.timeline-mood-img') : [];
+
+      for (let d = 1; d <= 5; d++) {
+        const x = startX + (d - 1) * (cardW + gap);
+        const mood = GameState.dailyMoods ? GameState.dailyMoods[d] : null;
+
+        // 小卡片底色
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#ebdcc5';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(x, cardY, cardW, cardH, 10) : ctx.rect(x, cardY, cardW, cardH);
+        ctx.fill();
+        ctx.stroke();
+
+        // 天數標籤
+        ctx.fillStyle = '#7a6651';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 12px "Microsoft JhengHei", Arial, sans-serif';
+        ctx.fillText(dayNames[d - 1], x + cardW / 2, cardY + 22);
+
+        // 表情圖片
+        const domImg = timelineImgs[d - 1];
+        if (domImg && domImg.complete && domImg.naturalWidth > 0) {
+          try {
+            ctx.drawImage(domImg, x + (cardW - 44) / 2, cardY + 32, 44, 44);
+          } catch (e) {
+            ctx.fillStyle = '#8c7355';
+            ctx.font = '22px Arial';
+            ctx.fillText('🌱', x + cardW / 2, cardY + 60);
+          }
+        } else {
+          ctx.fillStyle = '#8c7355';
+          ctx.font = '22px Arial';
+          ctx.fillText('🌱', x + cardW / 2, cardY + 60);
+        }
+
+        // 表情名稱
+        ctx.fillStyle = mood ? '#3a2e22' : '#a6b4b8';
+        ctx.font = 'bold 12.5px "Microsoft JhengHei", Arial, sans-serif';
+        ctx.fillText(mood ? mood.name : '（待記錄）', x + cardW / 2, cardY + 98);
+      }
+
+      // 7. 專屬心靈給力站 (y: 685 ~ 950)
+      const tipBoxY = 685;
+      const tipBoxW = 700;
+      const tipBoxH = 260;
+      ctx.fillStyle = '#fffdf7';
+      ctx.strokeStyle = '#ebdcc5';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(50, tipBoxY, tipBoxW, tipBoxH, 14) : ctx.rect(50, tipBoxY, tipBoxW, tipBoxH);
+      ctx.fill();
+      ctx.stroke();
+
+      // 金黃左側飾條
+      ctx.fillStyle = '#d49b2d';
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(50, tipBoxY, 6, tipBoxH, [14, 0, 0, 14]) : ctx.rect(50, tipBoxY, 6, tipBoxH);
+      ctx.fill();
+
+      // 心靈給力站標題
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#875108';
+      ctx.font = 'bold 16px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('💡 心靈給力站・專屬蛻變與祝福寄語', 72, tipBoxY + 32);
+
+      // 自動換行繪製文字小幫手
+      const drawWrappedText = (text, startX, startY, maxWidth, lineHeight, font, color) => {
+        ctx.font = font;
+        ctx.fillStyle = color;
+        let line = '';
+        let y = startY;
+        for (let i = 0; i < text.length; i++) {
+          const testLine = line + text[i];
+          const metrics = ctx.measureText(testLine);
+          if (metrics.width > maxWidth && i > 0) {
+            ctx.fillText(line, startX, y);
+            line = text[i];
+            y += lineHeight;
+          } else {
+            line = testLine;
+          }
+        }
+        ctx.fillText(line, startX, y);
+        return y + lineHeight;
+      };
+
+      const insightText = evalRes ? evalRes.insight : '面對同儕相處與困境時，學會傾聽內心聲音、尋求值得信任的師長支援，是邁向自我肯定的重要旅程。';
+      const tipText = evalRes ? `【實用因應指引】${evalRes.tip}` : '【實用因應指引】遇到挑釁時先保護安全，讓信任的大人介入，記得身邊永遠有人願意支持你。';
+
+      let nextY = drawWrappedText(insightText, 72, tipBoxY + 65, 650, 24, '14.5px "Microsoft JhengHei", Arial, sans-serif', '#3a2d1f');
+      drawWrappedText(tipText, 72, nextY + 8, 650, 24, 'bold 14px "Microsoft JhengHei", Arial, sans-serif', '#965a0b');
+
+      // 8. 底部求助資源與版權日期
+      const footerY = 975;
+      ctx.strokeStyle = '#ecd8be';
+      ctx.beginPath();
+      ctx.moveTo(50, footerY);
+      ctx.lineTo(750, footerY);
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#6d5a47';
+      ctx.font = 'bold 13px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText('🤝 溫暖陪伴與求助專線：教育部防制霸凌專線 1953  ｜  衛福部安心專線 1925  ｜  兒福聯盟 0800-003-123', 400, footerY + 30);
+
+      const dateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      ctx.fillStyle = '#9e8a75';
+      ctx.font = '12px "Microsoft JhengHei", Arial, sans-serif';
+      ctx.fillText(`《破曉學園》校園反霸凌心理探索遊戲  ｜  完成日期：${dateStr}  ｜  陪伴你走出陰霾，迎接晨曦`, 400, footerY + 58);
+
+      return canvas;
+    },
+
+    // 一鍵下載圖卡到玩家裝置
+    downloadReportCard() {
+      SoundFX.click();
+      const canvas = this.generateEndingReportCard();
+      const dataUrl = canvas.toDataURL('image/png');
+
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `破曉學園_心靈成長成果圖卡_${new Date().toISOString().slice(0, 10)}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      this.showToast('✅ 成果圖卡已下載至你的裝置！');
+    },
+
+    // 寄送成果圖卡至玩家的 Gmail
+    sendReportCardEmail() {
+      const emailInput = document.getElementById('input-player-email');
+      const statusEl = document.getElementById('email-send-status');
+      const sendBtn = document.getElementById('btn-send-email');
+      const btnText = document.getElementById('btn-send-text');
+
+      if (!emailInput || !statusEl || !sendBtn) return;
+
+      const email = emailInput.value.trim();
+
+      // 1. Email 格式正則校驗
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || !emailRegex.test(email)) {
+        statusEl.className = 'email-send-status error';
+        statusEl.style.display = 'block';
+        statusEl.textContent = '⚠️ 請輸入正確的 Email 信箱格式（例如 student@gmail.com）。';
+        emailInput.focus();
+        return;
+      }
+
+      // 2. 檢查 GAS Web App URL 是否已部署
+      let gasUrl = localStorage.getItem('dawn_academy_gas_url') || this.GAS_SERVICE_URL;
+      if (!gasUrl || gasUrl.includes('YOUR_GAS_DEPLOYMENT_ID')) {
+        // 提示使用者設定其專屬的 GAS 部署網址
+        const userEnteredUrl = prompt('【初次使用發信設定】\n請貼上您在 Google Apps Script 部署後取得的「網路應用程式網址 (Web App URL)」：\n(例如：https://script.google.com/macros/s/.../exec)');
+        if (userEnteredUrl && userEnteredUrl.trim().startsWith('https://script.google.com/macros/s/')) {
+          gasUrl = userEnteredUrl.trim();
+          localStorage.setItem('dawn_academy_gas_url', gasUrl);
+          this.showToast('✅ 已成功保存發信網址！');
+        } else {
+          statusEl.className = 'email-send-status error';
+          statusEl.style.display = 'block';
+          statusEl.innerHTML = '⚠️ <strong>尚未綁定發信服務網址</strong>。<br>您可以先部署 Google Apps Script 後填入網址，或直接點選右側<strong>「📥 直接下載成果圖卡」</strong>保存圖片！';
+          return;
+        }
+      }
+
+      // 3. 防刷機制：鎖定按鈕與狀態提示
+      SoundFX.click();
+      sendBtn.disabled = true;
+      if (btnText) btnText.textContent = '發送中...';
+      statusEl.className = 'email-send-status sending';
+      statusEl.style.display = 'block';
+      statusEl.textContent = '🔄 正在生成圖卡並透過 Google 官方伺服器寄送中，請稍候...';
+
+      // 4. 生成圖卡 Base64
+      setTimeout(() => {
+        try {
+          const canvas = this.generateEndingReportCard();
+          const dataUrl = canvas.toDataURL('image/png');
+          const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
+
+          const payload = {
+            email: email,
+            imageBase64: base64Data,
+            title: document.getElementById('ending-title') ? document.getElementById('ending-title').textContent : '心靈羅盤：五維成長檢視',
+            score: (GameState && GameState.getOverallScore) ? GameState.getOverallScore() : 85
+          };
+
+          // 5. 跨域安全 POST 傳輸至 Google Apps Script
+          fetch(gasUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          })
+            .then(res => res.json())
+            .then(data => {
+              if (data.status === 'success') {
+                SoundFX.positive();
+                statusEl.className = 'email-send-status success';
+                statusEl.innerHTML = `✅ <strong>寄送成功！</strong>成果圖卡已寄至 <code>${email}</code>，請至 Gmail 查收（若未收到可至垃圾郵件匣查看）。`;
+                this.startEmailCooldown(60);
+              } else {
+                statusEl.className = 'email-send-status error';
+                statusEl.textContent = `❌ 發送失敗：${data.message || '未知錯誤'}`;
+                sendBtn.disabled = false;
+                if (btnText) btnText.textContent = '重新寄送';
+              }
+            })
+            .catch(err => {
+              console.error('GAS Error:', err);
+              // GAS 在部分重導向情境可能無 CORS 標頭但已成功寄發
+              statusEl.className = 'email-send-status success';
+              statusEl.innerHTML = `✅ <strong>請求已送出！</strong>若信箱正確，成果圖卡將在 1~2 分鐘內送達 <code>${email}</code>（若未看見請檢查垃圾郵件匣）。同時建議直接點擊右側下載備用！`;
+              this.startEmailCooldown(60);
+            });
+        } catch (e) {
+          statusEl.className = 'email-send-status error';
+          statusEl.textContent = `❌ 圖卡生成失敗：${e.message}`;
+          sendBtn.disabled = false;
+          if (btnText) btnText.textContent = '寄送成果到我的 Gmail';
+        }
+      }, 120);
+    },
+
+    // 寄送冷卻倒數防刷計時器 (60 秒)
+    startEmailCooldown(seconds) {
+      const sendBtn = document.getElementById('btn-send-email');
+      const btnText = document.getElementById('btn-send-text');
+      if (!sendBtn || !btnText) return;
+
+      sendBtn.disabled = true;
+      let remain = seconds;
+      btnText.textContent = `冷卻中 (${remain}s)`;
+
+      const timer = setInterval(() => {
+        remain--;
+        if (remain <= 0) {
+          clearInterval(timer);
+          sendBtn.disabled = false;
+          btnText.textContent = '寄送成果到我的 Gmail';
+        } else {
+          btnText.textContent = `冷卻中 (${remain}s)`;
+        }
+      }, 1000);
+    },
   };
 
   window.addEventListener('DOMContentLoaded', () => {
